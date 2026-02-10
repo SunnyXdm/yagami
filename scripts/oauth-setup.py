@@ -19,16 +19,38 @@ import asyncio
 import http.server
 import json
 import os
+import pathlib
 import threading
 import urllib.parse
 import webbrowser
 
-# Try to load .env if python-dotenv is available
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+# Resolve .env relative to the project root (parent of scripts/)
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+DOTENV_PATH = PROJECT_ROOT / ".env"
+
+
+def _load_env_file(path: pathlib.Path):
+    """Load a .env file into os.environ. Works without python-dotenv."""
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        # Strip surrounding quotes
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+        # Don't overwrite vars already set in the real environment
+        if key not in os.environ:
+            os.environ[key] = value
+
+
+_load_env_file(DOTENV_PATH)
 
 import urllib.request
 
