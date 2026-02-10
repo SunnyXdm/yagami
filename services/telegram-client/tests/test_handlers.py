@@ -51,7 +51,7 @@ class TestHandleEvent:
         await handle_event(mock_tg, "youtube.watch", -100333, data, config)
         mock_tg.send_message.assert_called_once()
         msg = mock_tg.send_message.call_args[0][1]
-        assert "🎬 Watched" in msg
+        assert "`Watched`" in msg
         assert "Test Video" in msg
 
     @pytest.mark.asyncio
@@ -60,7 +60,7 @@ class TestHandleEvent:
         await handle_event(mock_tg, "youtube.likes", -100111, data, config)
         mock_tg.send_message.assert_called_once()
         msg = mock_tg.send_message.call_args[0][1]
-        assert "❤️ Liked" in msg
+        assert "`Liked`" in msg
 
     @pytest.mark.asyncio
     async def test_subscription_event(self, mock_tg, config):
@@ -68,7 +68,7 @@ class TestHandleEvent:
         await handle_event(mock_tg, "youtube.subscriptions", -100222, data, config)
         mock_tg.send_message.assert_called_once()
         msg = mock_tg.send_message.call_args[0][1]
-        assert "📺 New Subscription" in msg
+        assert "`Subscribed to`" in msg
 
     @pytest.mark.asyncio
     async def test_download_complete_routes_correctly(self, mock_tg, config):

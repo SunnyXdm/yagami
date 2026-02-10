@@ -76,7 +76,7 @@ class TestFormatWatch:
             "video_id": "abc123",
         }
         result = format_watch(data)
-        assert "🎬 Watched" in result
+        assert "`Watched`" in result
         assert "Test Video" in result
         assert "TestChan" in result
         assert "5:00" in result
@@ -110,14 +110,14 @@ class TestFormatLike:
             "duration_seconds": 60,
         }
         result = format_like(data)
-        assert "❤️ Liked" in result
+        assert "`Liked`" in result
         assert "Liked Video" in result
         assert "Cool Channel" in result
         assert "Downloading" in result
 
     def test_empty_data(self):
         result = format_like({})
-        assert "❤️ Liked" in result
+        assert "`Liked`" in result
         assert "Unknown" in result
 
 
@@ -131,7 +131,7 @@ class TestFormatSubscription:
             "channel_id": "UC123",
         }
         result = format_subscription(data)
-        assert "📺 New Subscription" in result
+        assert "`Subscribed to`" in result
         assert "Science Channel" in result
         assert "youtube.com/channel/UC123" in result
 
@@ -141,12 +141,12 @@ class TestFormatSubscription:
             "channel_title": "Old Channel",
         }
         result = format_subscription(data)
-        assert "👋 Unsubscribed" in result
+        assert "`Unsubscribed from`" in result
         assert "Old Channel" in result
 
     def test_empty_data_defaults_to_subscribe(self):
         result = format_subscription({})
-        assert "📺 New Subscription" in result
+        assert "`Subscribed to`" in result
 
 
 # ── format_video_caption ─────────────────────────────────────

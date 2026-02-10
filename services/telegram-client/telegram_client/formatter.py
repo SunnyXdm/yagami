@@ -30,39 +30,41 @@ def format_views(count: int | None) -> str:
 
 
 def format_watch(data: dict) -> str:
+    video_id = data.get('video_id', '')
+    title = data.get('title', 'Unknown')
+    channel = _channel(data)
     duration = data.get("duration") or format_duration(data.get("duration_seconds"))
     return (
-        f"🎬 Watched\n\n"
-        f"{data.get('title', 'Unknown')}\n"
-        f"Channel: {_channel(data)}\n"
-        f"Duration: {duration}\n\n"
-        f"🔗 https://youtube.com/watch?v={data.get('video_id', '')}"
+        f"`Watched`\n\n"
+        f"[{title}](https://youtube.com/watch?v={video_id})\n\n"
+        f"`Channel:` {channel}\n"
+        f"`Duration:` {duration}"
     )
 
 
 def format_like(data: dict) -> str:
+    video_id = data.get('video_id', '')
+    title = data.get('title', 'Unknown')
+    channel = _channel(data)
     duration = data.get("duration") or format_duration(data.get("duration_seconds"))
     return (
-        f"❤️ Liked\n\n"
-        f"{data.get('title', 'Unknown')}\n"
-        f"Channel: {_channel(data)}\n"
-        f"Duration: {duration}\n\n"
-        f"⬇️ Downloading for Telegram..."
+        f"`Liked`\n\n"
+        f"[{title}](https://youtube.com/watch?v={video_id})\n\n"
+        f"`Channel:` {channel}\n"
+        f"`Duration:` {duration}\n\n"
+        f"`Downloading...`"
     )
 
 
 def format_subscription(data: dict) -> str:
     action = data.get("action", "subscribed")
+    channel = _channel(data)
+    channel_id = data.get('channel_id', '')
+    
     if action == "unsubscribed":
-        return (
-            f"👋 Unsubscribed\n\n"
-            f"Channel: {_channel(data)}"
-        )
-    return (
-        f"📺 New Subscription\n\n"
-        f"{_channel(data)}\n\n"
-        f"🔗 https://youtube.com/channel/{data.get('channel_id', '')}"
-    )
+        return f"`Unsubscribed from` {channel}"
+    
+    return f"`Subscribed to` [{channel}](https://youtube.com/channel/{channel_id})"
 
 
 def format_video_caption(data: dict) -> str:
