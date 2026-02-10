@@ -34,12 +34,13 @@ defmodule YoutubePoller.SubsWorker do
 
     with {:ok, token} <- YoutubePoller.OAuth.get_token() do
       subs = YoutubePoller.YoutubeApi.list_subscriptions(token)
-      known_ids = YoutubePoller.DB.get_known_subscription_ids()
+      known = YoutubePoller.DB.get_known_subscriptions()
       current_ids = MapSet.new(subs, fn s -> s.channel_id end)
+      known_ids = MapSet.new(Map.keys(known))
 
       if not YoutubePoller.DB.seeded?(@seed_key) do
         Logger.info("Seeding #{MapSet.size(current_ids)} existing subscriptions (no notifications)")
-        for sub <- subs, do: YoutubePoller.DB.insert_known_subscription(sub.channel_id)
+        for sub <- subs, do: YoutubePoller.DB.insert_known_subscription(sub.channel_id, sub.channel_title)
         YoutubePoller.DB.mark_seeded!(@seed_key)
       else
         # New subscriptions
@@ -47,7 +48,7 @@ defmodule YoutubePoller.SubsWorker do
         new_subs = Enum.filter(subs, fn s -> MapSet.member?(new_ids, s.channel_id) end)
 
         for sub <- new_subs do
-          YoutubePoller.DB.insert_known_subscription(sub.channel_id)
+          YoutubePoller.DB.insert_known_subscription(sub.channel_id, sub.channel_title)
           YoutubePoller.DB.insert_event("subscription", sub)
           YoutubePoller.NatsClient.publish("youtube.subscriptions", Map.put(sub, :action, "subscribed"))
           Logger.info("New subscription: #{sub.channel_title}")
@@ -57,10 +58,11 @@ defmodule YoutubePoller.SubsWorker do
         lost_ids = MapSet.difference(known_ids, current_ids)
 
         for channel_id <- lost_ids do
+          channel_title = Map.get(known, channel_id, "Unknown")
           YoutubePoller.DB.remove_known_subscription(channel_id)
-          YoutubePoller.DB.insert_event("unsubscription", %{channel_id: channel_id})
-          YoutubePoller.NatsClient.publish("youtube.subscriptions", %{channel_id: channel_id, action: "unsubscribed"})
-          Logger.info("Unsubscribed from: #{channel_id}")
+          YoutubePoller.DB.insert_event("unsubscription", %{channel_id: channel_id, channel_title: channel_title})
+          YoutubePoller.NatsClient.publish("youtube.subscriptions", %{channel_id: channel_id, channel_title: channel_title, action: "unsubscribed"})
+          Logger.info("Unsubscribed from: #{channel_title}")
         end
 
         Logger.info("Subs check: #{length(new_subs)} new, #{MapSet.size(lost_ids)} removed")
