@@ -52,6 +52,11 @@ async def handle_event(
     elif subject == "download.complete":
         await handle_download_complete(tg, chat_id, data)
 
+    elif subject == "system.health":
+        text = data.get("message", "Health check received")
+        await tg.send_message(chat_id, text)
+        log.info("Sent startup health report to admin")
+
 
 async def handle_download_complete(
     tg: TelegramClient, chat_id: int, data: dict

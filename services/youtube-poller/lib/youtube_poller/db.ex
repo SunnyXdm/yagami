@@ -90,6 +90,23 @@ defmodule YoutubePoller.DB do
     )
   end
 
+  # --- Config / Seeding ---
+
+  @doc "Check whether initial seeding has been done for a given key (likes/subs/history)."
+  def seeded?(key) when is_binary(key) do
+    case query("SELECT 1 FROM config WHERE key = $1", [key]) do
+      {:ok, %{num_rows: n}} when n > 0 -> true
+      _ -> false
+    end
+  end
+
+  def mark_seeded!(key) when is_binary(key) do
+    query(
+      "INSERT INTO config (key, value) VALUES ($1, 'true') ON CONFLICT (key) DO NOTHING",
+      [key]
+    )
+  end
+
   # --- Private ---
 
   # LEARNING: The pipe operator |> passes the result of the left side as the

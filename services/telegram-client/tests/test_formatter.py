@@ -82,6 +82,13 @@ class TestFormatWatch:
         assert "5:00" in result
         assert "youtube.com/watch?v=abc123" in result
 
+    def test_with_channel_field(self):
+        """Poller sends 'channel' not 'channel_title' — formatter should handle both."""
+        data = {"title": "V", "channel": "MyChan", "duration": "3:45", "video_id": "x"}
+        result = format_watch(data)
+        assert "MyChan" in result
+        assert "3:45" in result
+
     def test_missing_fields_uses_defaults(self):
         result = format_watch({})
         assert "Unknown" in result
@@ -89,7 +96,7 @@ class TestFormatWatch:
     def test_partial_data(self):
         result = format_watch({"title": "My Video"})
         assert "My Video" in result
-        assert "Unknown" in result  # missing channel_title
+        assert "Unknown" in result  # missing channel
 
 
 # ── format_like ──────────────────────────────────────────────
@@ -130,7 +137,7 @@ class TestFormatSubscription:
 
     def test_unsubscription(self):
         data = {
-            "event": "unsubscribe",
+            "action": "unsubscribed",
             "channel_title": "Old Channel",
         }
         result = format_subscription(data)
@@ -156,6 +163,13 @@ class TestFormatVideoCaption:
         assert "My Video" in result
         assert "My Channel" in result
         assert "1:30" in result
+
+    def test_with_channel_and_duration_strings(self):
+        """download.complete sends 'channel' and 'duration' (string), not '_title'/'_seconds'."""
+        data = {"title": "V", "channel": "Ch", "duration": "4:20"}
+        result = format_video_caption(data)
+        assert "Ch" in result
+        assert "4:20" in result
 
     def test_missing_fields(self):
         result = format_video_caption({})

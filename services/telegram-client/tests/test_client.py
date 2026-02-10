@@ -38,12 +38,14 @@ class TestClientRouting:
             "youtube.likes": cfg.chat_id_likes,
             "youtube.subscriptions": cfg.chat_id_subscriptions,
             "download.complete": cfg.chat_id_likes,
+            "system.health": cfg.admin_user_id,
         }
 
         assert expected_routes["youtube.watch"] == -100333
         assert expected_routes["youtube.likes"] == -100111
         assert expected_routes["youtube.subscriptions"] == -100222
         assert expected_routes["download.complete"] == -100111
+        assert expected_routes["system.health"] == cfg.admin_user_id
 
     def test_all_chat_ids_are_distinct_channels(self):
         """Likes, subs, and history should go to different channels."""

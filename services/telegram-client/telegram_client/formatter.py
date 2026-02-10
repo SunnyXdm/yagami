@@ -30,41 +30,48 @@ def format_views(count: int | None) -> str:
 
 
 def format_watch(data: dict) -> str:
+    duration = data.get("duration") or format_duration(data.get("duration_seconds"))
     return (
         f"🎬 Watched\n\n"
         f"{data.get('title', 'Unknown')}\n"
-        f"Channel: {data.get('channel_title', 'Unknown')}\n"
-        f"Duration: {format_duration(data.get('duration_seconds'))}\n\n"
+        f"Channel: {_channel(data)}\n"
+        f"Duration: {duration}\n\n"
         f"🔗 https://youtube.com/watch?v={data.get('video_id', '')}"
     )
 
 
 def format_like(data: dict) -> str:
+    duration = data.get("duration") or format_duration(data.get("duration_seconds"))
     return (
         f"❤️ Liked\n\n"
         f"{data.get('title', 'Unknown')}\n"
-        f"Channel: {data.get('channel_title', 'Unknown')}\n"
-        f"Duration: {format_duration(data.get('duration_seconds'))}\n\n"
+        f"Channel: {_channel(data)}\n"
+        f"Duration: {duration}\n\n"
         f"⬇️ Downloading for Telegram..."
     )
 
 
 def format_subscription(data: dict) -> str:
-    event = data.get("event", "subscribe")
-    if event == "unsubscribe":
+    action = data.get("action", "subscribed")
+    if action == "unsubscribed":
         return (
             f"👋 Unsubscribed\n\n"
-            f"Channel: {data.get('channel_title', 'Unknown')}"
+            f"Channel: {_channel(data)}"
         )
     return (
         f"📺 New Subscription\n\n"
-        f"{data.get('channel_title', 'Unknown')}\n\n"
+        f"{_channel(data)}\n\n"
         f"🔗 https://youtube.com/channel/{data.get('channel_id', '')}"
     )
 
 
 def format_video_caption(data: dict) -> str:
-    dur = format_duration(data.get("duration_seconds"))
+    duration = data.get("duration") or format_duration(data.get("duration_seconds"))
     title = data.get("title", "Video")
-    channel = data.get("channel_title", "")
-    return f"❤️ {title} — {channel} ({dur})"
+    channel = _channel(data)
+    return f"❤️ {title} — {channel} ({duration})"
+
+
+def _channel(data: dict) -> str:
+    """Get channel name from either field name the poller might send."""
+    return data.get("channel_title") or data.get("channel") or "Unknown"

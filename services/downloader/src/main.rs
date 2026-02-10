@@ -108,36 +108,13 @@ async fn main() -> Result<()> {
 async fn process_download(request: &DownloadRequest, config: &Config) -> DownloadResult {
     match download::download_video(&request.video_id, &request.url, config).await {
         Ok(file_path) => {
-            // LEARNING: `match` is like a super-powered switch statement.
-            // It must be exhaustive — every possible case must be handled.
-            match download::get_file_size(&file_path) {
-                Ok(size) => {
-                    info!(
-                        "Downloaded {} — {} bytes",
-                        request.video_id, size
-                    );
-                    DownloadResult::success(
-                        request.video_id.clone(),
-                        request.title.clone(),
-                        file_path,
-                        size,
-                    )
-                }
-                Err(_) => DownloadResult::success(
-                    request.video_id.clone(),
-                    request.title.clone(),
-                    file_path,
-                    0,
-                ),
-            }
+            let size = download::get_file_size(&file_path).unwrap_or(0);
+            info!("Downloaded {} — {} bytes", request.video_id, size);
+            DownloadResult::success(request, file_path, size)
         }
         Err(e) => {
             error!("Download failed for {}: {}", request.video_id, e);
-            DownloadResult::failure(
-                request.video_id.clone(),
-                request.title.clone(),
-                e.to_string(),
-            )
+            DownloadResult::failure(request, e.to_string())
         }
     }
 }

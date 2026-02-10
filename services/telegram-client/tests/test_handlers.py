@@ -84,6 +84,14 @@ class TestHandleEvent:
         mock_tg.send_message.assert_not_called()
         mock_tg.send_file.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_health_report_sent_to_admin(self, mock_tg, config):
+        data = {"message": "✅ Yagami started (3/3 checks passed)", "passed": 3, "total": 3}
+        await handle_event(mock_tg, "system.health", config.admin_user_id, data, config)
+        mock_tg.send_message.assert_called_once()
+        msg = mock_tg.send_message.call_args[0][1]
+        assert "Yagami started" in msg
+
 
 # ── handle_download_complete ────────────────────────────────
 

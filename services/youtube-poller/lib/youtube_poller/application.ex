@@ -19,7 +19,14 @@ defmodule YoutubePoller.Application do
       # 2. NATS connection (workers publish through this)
       YoutubePoller.NatsClient,
 
-      # 3. Polling workers (start after DB + NATS are ready)
+      # 3. Startup health check (runs once, then exits)
+      %{
+        id: YoutubePoller.HealthCheck,
+        start: {YoutubePoller.HealthCheck, :start_link, [[]]},
+        restart: :temporary
+      },
+
+      # 4. Polling workers (start after DB + NATS are ready)
       YoutubePoller.LikesWorker,
       YoutubePoller.SubsWorker,
       YoutubePoller.HistoryWorker

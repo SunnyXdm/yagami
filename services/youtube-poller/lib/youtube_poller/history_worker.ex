@@ -2,18 +2,17 @@ defmodule YoutubePoller.HistoryWorker do
   @moduledoc """
   Scrapes YouTube watch history via yt-dlp and publishes new watches to NATS.
 
-  This uses yt-dlp (not the YouTube API) because watch history is NOT
-  available through the API. Requires browser cookies for authentication.
+  Uses yt-dlp (not the API) because watch history isn't available via the
+  YouTube Data API. Requires browser cookies for authentication.
 
-  LEARNING: This follows the same GenServer timer pattern as LikesWorker,
-  but uses System.cmd (via Ytdlp module) instead of HTTP requests.
+  On first run, seeds all currently-visible watch history silently.
   """
   use GenServer
   require Logger
 
-  def start_link(_opts) do
-    GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
-  end
+  @seed_key "seeded_history"
+
+  def start_link(_opts), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
 
   @impl true
   def init(:ok) do
@@ -35,16 +34,21 @@ defmodule YoutubePoller.HistoryWorker do
     case YoutubePoller.Ytdlp.scrape_watch_history() do
       {:ok, videos} ->
         known_ids = YoutubePoller.DB.get_known_watch_ids()
-
         new_videos = Enum.reject(videos, fn v -> MapSet.member?(known_ids, v.video_id) end)
 
-        Logger.info("Found #{length(new_videos)} new watched videos")
+        if not YoutubePoller.DB.seeded?(@seed_key) do
+          Logger.info("Seeding #{length(new_videos)} existing watch history entries (no notifications)")
+          for video <- new_videos, do: YoutubePoller.DB.insert_known_watch(video.video_id)
+          YoutubePoller.DB.mark_seeded!(@seed_key)
+        else
+          Logger.info("Found #{length(new_videos)} new watched videos")
 
-        for video <- new_videos do
-          YoutubePoller.DB.insert_known_watch(video.video_id)
-          YoutubePoller.DB.insert_event("watch", video)
-          YoutubePoller.NatsClient.publish("youtube.watch", video)
-          Logger.info("New watch: #{video.title}")
+          for video <- new_videos do
+            YoutubePoller.DB.insert_known_watch(video.video_id)
+            YoutubePoller.DB.insert_event("watch", video)
+            YoutubePoller.NatsClient.publish("youtube.watch", video)
+            Logger.info("New watch: #{video.title}")
+          end
         end
 
       {:error, reason} ->

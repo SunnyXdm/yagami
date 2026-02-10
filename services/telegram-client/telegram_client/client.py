@@ -54,6 +54,7 @@ async def run() -> None:
         "youtube.likes":         config.chat_id_likes,
         "youtube.subscriptions": config.chat_id_subscriptions,
         "download.complete":     config.chat_id_likes,
+        "system.health":         config.admin_user_id,
     }
 
     # LEARNING: We need a factory function here because Python closures
