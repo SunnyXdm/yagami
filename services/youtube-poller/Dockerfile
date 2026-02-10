@@ -15,7 +15,7 @@ RUN mix release
 
 # Run stage — includes yt-dlp for watch history scraping
 FROM alpine:3.19
-RUN apk add --no-cache libstdc++ openssl ncurses-libs python3 py3-pip ffmpeg
+RUN apk add --no-cache libstdc++ openssl ncurses-libs python3 py3-pip ffmpeg nodejs
 RUN pip3 install --break-system-packages yt-dlp
 
 COPY --from=builder /app/_build/prod/rel/youtube_poller /app

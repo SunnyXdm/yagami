@@ -38,9 +38,16 @@ defmodule YoutubePoller.SubsWorker do
       current_ids = MapSet.new(subs, fn s -> s.channel_id end)
       known_ids = MapSet.new(Map.keys(known))
 
-      if not YoutubePoller.DB.seeded?(@seed_key) do
-        Logger.info("Seeding #{MapSet.size(current_ids)} existing subscriptions (no notifications)")
+      # Detect stale data: if known subs have NULL titles, re-seed everything
+      stale? = Enum.any?(Map.values(known), &is_nil/1)
+
+      if not YoutubePoller.DB.seeded?(@seed_key) or stale? do
+        Logger.info("Seeding #{MapSet.size(current_ids)} subscriptions (no notifications)")
         for sub <- subs, do: YoutubePoller.DB.insert_known_subscription(sub.channel_id, sub.channel_title)
+        # Remove any known IDs that are no longer in YouTube (silently)
+        for channel_id <- MapSet.difference(known_ids, current_ids) do
+          YoutubePoller.DB.remove_known_subscription(channel_id)
+        end
         YoutubePoller.DB.mark_seeded!(@seed_key)
       else
         # New subscriptions
@@ -58,7 +65,7 @@ defmodule YoutubePoller.SubsWorker do
         lost_ids = MapSet.difference(known_ids, current_ids)
 
         for channel_id <- lost_ids do
-          channel_title = Map.get(known, channel_id, "Unknown")
+          channel_title = Map.get(known, channel_id) || "Unknown"
           YoutubePoller.DB.remove_known_subscription(channel_id)
           YoutubePoller.DB.insert_event("unsubscription", %{channel_id: channel_id, channel_title: channel_title})
           YoutubePoller.NatsClient.publish("youtube.subscriptions", %{channel_id: channel_id, channel_title: channel_title, action: "unsubscribed"})

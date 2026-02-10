@@ -18,11 +18,20 @@ defmodule YoutubePoller.Ytdlp do
   def scrape_watch_history do
     cookies_path = Application.get_env(:youtube_poller, :cookies_path)
 
+    # Copy cookies to a writable temp path (Docker mounts them read-only)
+    writable_cookies = "/tmp/cookies.txt"
+    case File.cp(cookies_path, writable_cookies) do
+      :ok -> :ok
+      {:error, reason} ->
+        Logger.warning("Could not copy cookies to writable path: #{inspect(reason)}")
+    end
+
     args = [
       "--flat-playlist",
       "-j",
-      "--cookies", cookies_path,
+      "--cookies", writable_cookies,
       "--playlist-end", "50",
+      "--js-runtimes", "nodejs",
       "https://www.youtube.com/feed/history"
     ]
 
