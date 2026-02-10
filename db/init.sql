@@ -67,12 +67,13 @@ CREATE INDEX IF NOT EXISTS idx_downloads_video_id ON downloads(video_id);
 
 CREATE TABLE IF NOT EXISTS oauth_tokens (
     id               SERIAL PRIMARY KEY,
-    provider         VARCHAR(20) NOT NULL,  -- google
+    provider         VARCHAR(20) NOT NULL DEFAULT 'google',
     access_token     TEXT        NOT NULL,
     refresh_token    TEXT        NOT NULL,
     expires_at       TIMESTAMPTZ NOT NULL,
     scopes           TEXT,
-    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (provider)
 );
 
 -- ── Application config (key-value store) ───────────────────

@@ -121,13 +121,13 @@ async def save_to_db(db_url: str, access_token: str, refresh_token: str, expires
 
     conn = await asyncpg.connect(db_url)
     await conn.execute("""
-        INSERT INTO oauth_tokens (access_token, refresh_token, expires_at)
-        VALUES ($1, $2, NOW() + INTERVAL '1 second' * $3)
-        ON CONFLICT ((true)) DO UPDATE SET
-            access_token = $1,
-            refresh_token = $2,
-            expires_at = NOW() + INTERVAL '1 second' * $3,
-            updated_at = NOW()
+        INSERT INTO oauth_tokens (provider, access_token, refresh_token, expires_at)
+        VALUES ('google', $1, $2, NOW() + INTERVAL '1 second' * $3)
+        ON CONFLICT (provider) DO UPDATE SET
+            access_token  = EXCLUDED.access_token,
+            refresh_token = EXCLUDED.refresh_token,
+            expires_at    = EXCLUDED.expires_at,
+            updated_at    = NOW()
     """, access_token, refresh_token, expires_in)
     await conn.close()
     print("✓ Tokens saved to database")
