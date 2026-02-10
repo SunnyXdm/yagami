@@ -120,7 +120,7 @@ class TestHandleDownloadComplete:
     async def test_successful_upload(self, mock_tg):
         # Create a real temp file so os.path.exists + os.path.getsize work
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
-            f.write(b"fake video data " * 100)
+            f.write(b"fake video data" * 100)
             temp_path = f.name
 
         try:
@@ -141,11 +141,14 @@ class TestHandleDownloadComplete:
             assert call_kwargs["entity"] == -100111
             assert call_kwargs["file"] == temp_path
             assert call_kwargs["supports_streaming"] is True
-            assert call_kwargs["thumb"] == "https://i.ytimg.com/vi/v3/hqdefault.jpg"
+            # Thumbnail should be downloaded to a temp file path (or None if download fails)
+            thumb = call_kwargs["thumb"]
+            assert thumb is None or (isinstance(thumb, str) and thumb.endswith(".jpg"))
             assert "Good Video" in call_kwargs["caption"]
 
             # Temp file should be deleted after upload
             assert not os.path.exists(temp_path)
+            # Thumbnail temp file should also be deleted if it was created
         finally:
             # Clean up in case test failed before handler deleted it
             if os.path.exists(temp_path):

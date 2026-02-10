@@ -11,6 +11,7 @@ LEARNING (Python):
 import json
 import logging
 import os
+import tempfile
 
 from telethon import TelegramClient
 
@@ -87,26 +88,42 @@ async def handle_download_complete(
     file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
     log.info("Uploading %s (%.1f MB) to Telegram...", video_id, file_size_mb)
 
-    # Get thumbnail URL if available
-    thumbnail = data.get("thumbnail")
+    # Download thumbnail to a temp file if URL is provided
+    thumb_path = None
+    thumbnail_url = data.get("thumbnail")
+    if thumbnail_url:
+        try:
+            import urllib.request
+            thumb_path = tempfile.mktemp(suffix=".jpg")
+            urllib.request.urlretrieve(thumbnail_url, thumb_path)
+            log.info("Downloaded thumbnail from %s", thumbnail_url)
+        except Exception as e:
+            log.warning("Failed to download thumbnail: %s", e)
+            thumb_path = None
 
     # LEARNING: supports_streaming=True tells Telegram this is a video
     # that can be played inline (not just downloaded as a file).
     # Telethon MTProto allows up to 2 GB with full inline player!
-    # thumb parameter accepts URL, file path, or bytes — Telethon downloads URLs automatically.
     await tg.send_file(
         entity=chat_id,
         file=file_path,
         caption=caption,
         supports_streaming=True,
-        thumb=thumbnail,
+        thumb=thumb_path,
     )
 
-    # Clean up — delete the temp file after successful upload
+    # Clean up — delete temp files after successful upload
     try:
         os.remove(file_path)
         log.info("Deleted temp file: %s", file_path)
     except OSError as e:
         log.warning("Could not delete %s: %s", file_path, e)
+
+    if thumb_path and os.path.exists(thumb_path):
+        try:
+            os.remove(thumb_path)
+            log.info("Deleted thumbnail: %s", thumb_path)
+        except OSError as e:
+            log.warning("Could not delete thumbnail %s: %s", thumb_path, e)
 
     log.info("Uploaded %s to Telegram successfully", video_id)
