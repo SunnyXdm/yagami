@@ -42,19 +42,7 @@ echo "Have you set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env?"
 read -p "(y/n): " google_ready
 
 if [ "$google_ready" = "y" ]; then
-    echo "Starting database for OAuth token storage..."
-    ${COMPOSE:-docker compose} up -d postgres
-    echo "Waiting for PostgreSQL to be ready..."
-    for i in $(seq 1 30); do
-        if ${COMPOSE:-docker compose} exec -T postgres pg_isready -U yagami >/dev/null 2>&1; then
-            echo "✓ PostgreSQL is ready"
-            break
-        fi
-        sleep 1
-    done
-
     echo "Running OAuth setup..."
-    pip3 install asyncpg --quiet 2>/dev/null || true
     python3 scripts/oauth-setup.py
 else
     echo "→ Get credentials from: https://console.cloud.google.com/apis/credentials"

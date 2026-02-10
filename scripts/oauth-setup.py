@@ -3,10 +3,9 @@ One-time Google OAuth2 setup — gets refresh token for YouTube API access.
 
 This starts a local HTTP server, opens the Google consent screen in your browser,
 and exchanges the authorization code for tokens. The refresh token is then
-inserted into the database.
+saved to your .env file.
 
 Usage:
-    pip install google-auth-oauthlib asyncpg
     python scripts/oauth-setup.py
 
 Prerequisites:
@@ -15,7 +14,6 @@ Prerequisites:
     3. Create OAuth 2.0 credentials (Desktop app type)
     4. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your .env
 """
-import asyncio
 import http.server
 import json
 import os
@@ -108,29 +106,29 @@ def exchange_code(client_id: str, client_secret: str, code: str) -> dict:
         return json.loads(resp.read())
 
 
-async def save_to_db(db_url: str, access_token: str, refresh_token: str, expires_in: int):
-    """Save tokens to the database."""
-    try:
-        import asyncpg
-    except ImportError:
-        print("\n⚠️  asyncpg not installed. Printing tokens instead:")
-        print(f"   Access token:  {access_token[:20]}...")
-        print(f"   Refresh token: {refresh_token}")
-        print(f"\n   Insert manually into the oauth_tokens table.")
-        return
+def save_to_env(refresh_token: str):
+    """Save the refresh token to the .env file."""
+    env_path = DOTENV_PATH
+    if not env_path.is_file():
+        print(f"Error: {env_path} not found. Run from the project root.")
+        return False
 
-    conn = await asyncpg.connect(db_url)
-    await conn.execute("""
-        INSERT INTO oauth_tokens (provider, access_token, refresh_token, expires_at)
-        VALUES ('google', $1, $2, NOW() + INTERVAL '1 second' * $3)
-        ON CONFLICT (provider) DO UPDATE SET
-            access_token  = EXCLUDED.access_token,
-            refresh_token = EXCLUDED.refresh_token,
-            expires_at    = EXCLUDED.expires_at,
-            updated_at    = NOW()
-    """, access_token, refresh_token, expires_in)
-    await conn.close()
-    print("✓ Tokens saved to database")
+    content = env_path.read_text()
+    lines = content.splitlines()
+    found = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("GOOGLE_REFRESH_TOKEN"):
+            lines[i] = f"GOOGLE_REFRESH_TOKEN={refresh_token}"
+            found = True
+            break
+
+    if not found:
+        lines.append(f"GOOGLE_REFRESH_TOKEN={refresh_token}")
+
+    env_path.write_text("\n".join(lines) + "\n")
+    print(f"✓ Refresh token saved to .env")
+    return True
 
 
 def main():
@@ -138,8 +136,6 @@ def main():
 
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-    db_password = os.getenv("DB_PASSWORD", "yagami")
-    db_url = os.getenv("DATABASE_URL", f"postgres://yagami:{db_password}@localhost:5432/yagami")
 
     if not client_id or not client_secret:
         print("Error: Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env first.")
@@ -187,13 +183,8 @@ def main():
 
     print("✓ Tokens received")
 
-    # Save to database
-    asyncio.run(save_to_db(
-        db_url,
-        tokens["access_token"],
-        tokens["refresh_token"],
-        tokens.get("expires_in", 3600),
-    ))
+    # Save refresh token to .env
+    save_to_env(tokens["refresh_token"])
 
     print("\n✓ OAuth setup complete! The youtube-poller can now access your YouTube data.")
 

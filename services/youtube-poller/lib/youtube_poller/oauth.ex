@@ -15,19 +15,30 @@ defmodule YoutubePoller.OAuth do
 
   @doc "Get a valid access token, refreshing if expired."
   def get_token do
-    case YoutubePoller.DB.get_oauth_token() do
-      {:ok, access_token, refresh_token, expires_at} ->
-        if DateTime.compare(expires_at, DateTime.utc_now()) == :gt do
-          # Token is still valid
-          {:ok, access_token}
-        else
-          # Token expired — refresh it
-          refresh(refresh_token)
-        end
+    # Try env var first (simpler), fall back to database
+    case get_refresh_token() do
+      {:ok, refresh_token} ->
+        # With env-based refresh token, we always refresh on demand.
+        # A process-level cache could be added later.
+        refresh(refresh_token)
 
       {:error, :no_token} ->
-        Logger.error("No OAuth token found. Run scripts/oauth-setup.py first.")
+        Logger.error("No OAuth token found. Set GOOGLE_REFRESH_TOKEN in .env or run scripts/oauth-setup.py")
         {:error, :no_token}
+    end
+  end
+
+  defp get_refresh_token do
+    case Application.get_env(:youtube_poller, :google_refresh_token) do
+      token when is_binary(token) and token != "" ->
+        {:ok, token}
+
+      _ ->
+        # Fall back to database
+        case YoutubePoller.DB.get_oauth_token() do
+          {:ok, _access, refresh, _expires} -> {:ok, refresh}
+          error -> error
+        end
     end
   end
 
