@@ -10,6 +10,23 @@ use tokio::process::Command;
 
 use crate::config::Config;
 
+/// Copy cookies to a writable temp path so yt-dlp can update them.
+/// The original file is mounted read-only in Docker.
+fn writable_cookies(source: &str) -> Option<String> {
+    let src = PathBuf::from(source);
+    if !src.exists() {
+        return None;
+    }
+    let dest = PathBuf::from("/tmp/cookies.txt");
+    match std::fs::copy(&src, &dest) {
+        Ok(_) => Some(dest.to_string_lossy().to_string()),
+        Err(e) => {
+            error!("Failed to copy cookies to writable path: {}", e);
+            None
+        }
+    }
+}
+
 /// Download a video using yt-dlp. Returns the file path on success.
 ///
 /// LEARNING: `Result<String>` is short for `Result<String, anyhow::Error>`.
@@ -30,13 +47,14 @@ pub async fn download_video(video_id: &str, url: &str, config: &Config) -> Resul
         "--no-playlist".to_string(),
         "--max-filesize".to_string(),
         format!("{}M", config.max_file_size_mb),
+        "--js-runtimes".to_string(),
+        "nodejs".to_string(),
     ];
 
-    // Add cookies if the file exists
-    let cookies_path = PathBuf::from(&config.cookies_path);
-    if cookies_path.exists() {
+    // Copy cookies to a writable temp path (Docker mounts them read-only)
+    if let Some(cookies) = writable_cookies(&config.cookies_path) {
         args.push("--cookies".to_string());
-        args.push(config.cookies_path.clone());
+        args.push(cookies);
     }
 
     args.push(url.to_string());

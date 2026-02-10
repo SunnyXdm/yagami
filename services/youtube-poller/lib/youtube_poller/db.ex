@@ -85,7 +85,7 @@ defmodule YoutubePoller.DB do
 
   def insert_event(event_type, data) do
     query(
-      "INSERT INTO events (event_type, data) VALUES ($1, $2)",
+      "INSERT INTO events (event_type, metadata) VALUES ($1, $2)",
       [event_type, Jason.encode!(data)]
     )
   end

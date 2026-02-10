@@ -43,6 +43,11 @@ async def run() -> None:
     me = await tg.get_me()
     log.info("Telethon connected as @%s (id=%d)", me.username, me.id)
 
+    # Populate Telethon's entity cache so we can send messages to
+    # users/channels by numeric ID without prior interaction.
+    await tg.get_dialogs()
+    log.info("Entity cache populated")
+
     # ── NATS ─────────────────────────────────────────────────
 
     nc = await nats.connect(config.nats_url)
