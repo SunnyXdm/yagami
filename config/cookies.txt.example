@@ -1,0 +1,8 @@
+# Placeholder — replace with your real YouTube cookies.
+#
+# Export from your browser using a cookie-export extension, e.g.:
+#   - "Get cookies.txt LOCALLY" (Chrome)
+#   - "cookies.txt" (Firefox)
+#
+# The file must be in Netscape cookie format.
+# Mount it read-only in Docker — see docker-compose.yml.

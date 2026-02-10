@@ -1,0 +1,34 @@
+# === Secrets — NEVER commit these ===
+.env
+config/cookies.txt
+*.session
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+venv/
+.venv/
+dist/
+
+# === Go ===
+services/api-gateway/api-gateway
+
+# === Elixir ===
+services/youtube-poller/_build/
+services/youtube-poller/deps/
+services/youtube-poller/*.ez
+
+# === Rust ===
+services/downloader/target/
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# === OS ===
+.DS_Store
+Thumbs.db

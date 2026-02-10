@@ -1,0 +1,108 @@
+# ============================================================
+#  Project Yagami — Docker Compose
+#  Start everything: docker compose up -d
+# ============================================================
+
+services:
+  # ── Infrastructure ─────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      POSTGRES_DB: yagami
+      POSTGRES_USER: yagami
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U yagami"]
+      interval: 5s
+      retries: 5
+    restart: unless-stopped
+
+  nats:
+    image: nats:2-alpine
+    command: ["--jetstream", "--store_dir", "/data"]
+    volumes:
+      - natsdata:/data
+    ports:
+      - "4222:4222"     # Client connections
+      - "8222:8222"     # Monitoring dashboard
+    restart: unless-stopped
+
+  # ── Application Services ───────────────────────────────────
+
+  api-gateway:
+    build: ./services/api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://yagami:${DB_PASSWORD}@postgres:5432/yagami
+      NATS_URL: nats://nats:4222
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_started }
+    restart: unless-stopped
+
+  youtube-poller:
+    build: ./services/youtube-poller
+    volumes:
+      - ./config/cookies.txt:/config/cookies.txt:ro
+    environment:
+      DATABASE_URL: postgres://yagami:${DB_PASSWORD}@postgres:5432/yagami
+      NATS_URL: nats://nats:4222
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      YOUTUBE_POLL_INTERVAL_LIKES: "120"
+      YOUTUBE_POLL_INTERVAL_SUBS: "600"
+      YOUTUBE_POLL_INTERVAL_HISTORY: "300"
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_started }
+    restart: unless-stopped
+
+  downloader:
+    build: ./services/downloader
+    volumes:
+      - downloads:/tmp/ytdl
+      - ./config/cookies.txt:/config/cookies.txt:ro
+    environment:
+      NATS_URL: nats://nats:4222
+      DOWNLOAD_DIR: /tmp/ytdl
+      MAX_CONCURRENT_DOWNLOADS: "2"
+      MAX_FILE_SIZE_MB: "2000"
+      COOKIES_PATH: /config/cookies.txt
+    depends_on:
+      nats: { condition: service_started }
+    restart: unless-stopped
+
+  telegram-client:
+    build: ./services/telegram-client
+    volumes:
+      - downloads:/tmp/ytdl:ro
+      - telegram_session:/app/session
+    environment:
+      NATS_URL: nats://nats:4222
+      DATABASE_URL: postgres://yagami:${DB_PASSWORD}@postgres:5432/yagami
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      TELEGRAM_SESSION_STRING: ${TELEGRAM_SESSION_STRING}
+      TELEGRAM_CHAT_ID_LIKES: ${TELEGRAM_CHAT_ID_LIKES}
+      TELEGRAM_CHAT_ID_SUBSCRIPTIONS: ${TELEGRAM_CHAT_ID_SUBSCRIPTIONS}
+      TELEGRAM_CHAT_ID_WATCH_HISTORY: ${TELEGRAM_CHAT_ID_WATCH_HISTORY}
+      TELEGRAM_ADMIN_USER_ID: ${TELEGRAM_ADMIN_USER_ID}
+    depends_on:
+      nats: { condition: service_started }
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  natsdata:
+  telegram_session:
+  downloads:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=10g
