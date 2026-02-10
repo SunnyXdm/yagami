@@ -33,3 +33,55 @@ impl Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    /// LEARNING: Rust tests run in parallel by default. Since env vars are
+    /// global process state, we combine env var tests into one function to
+    /// avoid race conditions. This is a common gotcha!
+    #[test]
+    fn test_config_from_env() {
+        // --- Test 1: defaults when no env vars set ---
+        env::remove_var("NATS_URL");
+        env::remove_var("DOWNLOAD_DIR");
+        env::remove_var("MAX_CONCURRENT_DOWNLOADS");
+        env::remove_var("MAX_FILE_SIZE_MB");
+        env::remove_var("COOKIES_PATH");
+
+        let config = Config::from_env();
+        assert_eq!(config.nats_url, "nats://localhost:4222");
+        assert_eq!(config.download_dir, "/tmp/downloads");
+        assert_eq!(config.max_concurrent, 3);
+        assert_eq!(config.max_file_size_mb, 2000);
+        assert_eq!(config.cookies_path, "/app/cookies.txt");
+
+        // --- Test 2: reads custom env vars ---
+        env::set_var("NATS_URL", "nats://custom:9999");
+        env::set_var("DOWNLOAD_DIR", "/custom/downloads");
+        env::set_var("MAX_CONCURRENT_DOWNLOADS", "5");
+        env::set_var("MAX_FILE_SIZE_MB", "500");
+        env::set_var("COOKIES_PATH", "/custom/cookies.txt");
+
+        let config = Config::from_env();
+        assert_eq!(config.nats_url, "nats://custom:9999");
+        assert_eq!(config.download_dir, "/custom/downloads");
+        assert_eq!(config.max_concurrent, 5);
+        assert_eq!(config.max_file_size_mb, 500);
+        assert_eq!(config.cookies_path, "/custom/cookies.txt");
+
+        // --- Test 3: invalid number falls back to default ---
+        env::set_var("MAX_CONCURRENT_DOWNLOADS", "not_a_number");
+        let config = Config::from_env();
+        assert_eq!(config.max_concurrent, 3);
+
+        // Clean up
+        env::remove_var("NATS_URL");
+        env::remove_var("DOWNLOAD_DIR");
+        env::remove_var("MAX_CONCURRENT_DOWNLOADS");
+        env::remove_var("MAX_FILE_SIZE_MB");
+        env::remove_var("COOKIES_PATH");
+    }
+}

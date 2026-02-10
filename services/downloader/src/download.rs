@@ -79,3 +79,57 @@ pub fn get_file_size(path: &str) -> Result<u64> {
     let metadata = std::fs::metadata(path).context("Failed to read file metadata")?;
     Ok(metadata.len())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::io::Write;
+
+    #[test]
+    fn test_get_file_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.mp4");
+        let mut f = fs::File::create(&path).unwrap();
+        f.write_all(&[0u8; 1024]).unwrap();
+
+        let size = get_file_size(path.to_str().unwrap()).unwrap();
+        assert_eq!(size, 1024);
+    }
+
+    #[test]
+    fn test_get_file_size_missing_file() {
+        let result = get_file_size("/nonexistent/path.mp4");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_find_downloaded_file_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("abc123.mp4");
+        fs::File::create(&file_path).unwrap();
+
+        let result = find_downloaded_file(dir.path().to_str().unwrap(), "abc123");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("abc123.mp4"));
+    }
+
+    #[test]
+    fn test_find_downloaded_file_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = find_downloaded_file(dir.path().to_str().unwrap(), "nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_find_downloaded_file_matches_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        // yt-dlp might add extension like .webm or .mkv
+        fs::File::create(dir.path().join("vid999.webm")).unwrap();
+        fs::File::create(dir.path().join("other.mp4")).unwrap();
+
+        let result = find_downloaded_file(dir.path().to_str().unwrap(), "vid999");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("vid999"));
+    }
+}

@@ -61,7 +61,9 @@ async def handle_download_complete(
     video_id = data.get("video_id", "unknown")
 
     # Handle failed downloads
-    if data.get("status") != "success":
+    # LEARNING: The Rust downloader sends {"success": true/false},
+    # NOT {"status": "success"}. Always verify field names match between services!
+    if not data.get("success", False):
         error = data.get("error", "Unknown error")
         await tg.send_message(
             chat_id,

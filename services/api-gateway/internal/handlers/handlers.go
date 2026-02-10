@@ -9,6 +9,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -16,13 +17,23 @@ import (
 	"yagami/api-gateway/internal/store"
 )
 
+// Storer defines the database operations needed by the handlers.
+// LEARNING: Go interfaces are implicit — any type that has these methods
+// "implements" Storer automatically. No `implements` keyword needed.
+// This lets us swap in a mock for testing.
+type Storer interface {
+	Ping(ctx context.Context) error
+	ListEvents(ctx context.Context, eventType string, limit int) ([]store.Event, error)
+	GetStats(ctx context.Context) (*store.Stats, error)
+}
+
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
-	store *store.Store
+	store Storer
 }
 
 // New creates a Handler. In Go, this is the conventional "constructor".
-func New(s *store.Store) *Handler {
+func New(s Storer) *Handler {
 	return &Handler{store: s}
 }
 
