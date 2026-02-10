@@ -64,7 +64,8 @@ def format_subscription(data: dict) -> str:
     if action == "unsubscribed":
         return f"`Unsubscribed from` {channel}"
     
-    return f"`Subscribed to` [{channel}](https://youtube.com/channel/{channel_id})"
+    # Include raw URL on separate line for Telegram to generate link preview
+    return f"`Subscribed to` {channel}\n\nhttps://youtube.com/channel/{channel_id}"
 
 
 def format_video_caption(data: dict) -> str:
