@@ -138,7 +138,8 @@ def main():
 
     client_id = os.getenv("GOOGLE_CLIENT_ID")
     client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-    db_url = os.getenv("DATABASE_URL", "postgres://yagami:yagami@localhost:5432/yagami")
+    db_password = os.getenv("DB_PASSWORD", "yagami")
+    db_url = os.getenv("DATABASE_URL", f"postgres://yagami:{db_password}@localhost:5432/yagami")
 
     if not client_id or not client_secret:
         print("Error: Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env first.")
