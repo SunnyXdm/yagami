@@ -131,6 +131,7 @@ class TestHandleDownloadComplete:
                 "success": True,
                 "file_path": temp_path,
                 "duration_seconds": 120,
+                "thumbnail": "https://i.ytimg.com/vi/v3/hqdefault.jpg",
             }
             await handle_download_complete(mock_tg, -100111, data)
 
@@ -140,6 +141,7 @@ class TestHandleDownloadComplete:
             assert call_kwargs["entity"] == -100111
             assert call_kwargs["file"] == temp_path
             assert call_kwargs["supports_streaming"] is True
+            assert call_kwargs["thumb"] == "https://i.ytimg.com/vi/v3/hqdefault.jpg"
             assert "Good Video" in call_kwargs["caption"]
 
             # Temp file should be deleted after upload
@@ -155,3 +157,25 @@ class TestHandleDownloadComplete:
         await handle_download_complete(mock_tg, -100111, data)
         mock_tg.send_message.assert_called_once()
         mock_tg.send_file.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_upload_without_thumbnail(self, mock_tg):
+        """Verify upload works even when thumbnail field is missing."""
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"data")
+            temp_path = f.name
+
+        try:
+            data = {
+                "video_id": "v5",
+                "title": "No Thumb",
+                "success": True,
+                "file_path": temp_path,
+            }
+            await handle_download_complete(mock_tg, -100111, data)
+            mock_tg.send_file.assert_called_once()
+            call_kwargs = mock_tg.send_file.call_args[1]
+            assert call_kwargs["thumb"] is None
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)

@@ -36,17 +36,17 @@ async def handle_event(
 
     if subject == "youtube.watch":
         text = format_watch(data)
-        await tg.send_message(chat_id, text)
+        await tg.send_message(chat_id, text, link_preview=True)
         log.info("Sent watch notification: %s", data.get("title"))
 
     elif subject == "youtube.likes":
         text = format_like(data)
-        await tg.send_message(chat_id, text)
+        await tg.send_message(chat_id, text, link_preview=True)
         log.info("Sent like notification: %s", data.get("title"))
 
     elif subject == "youtube.subscriptions":
         text = format_subscription(data)
-        await tg.send_message(chat_id, text)
+        await tg.send_message(chat_id, text, link_preview=True)
         log.info("Sent subscription notification: %s", data.get("channel_title"))
 
     elif subject == "download.complete":
@@ -87,14 +87,19 @@ async def handle_download_complete(
     file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
     log.info("Uploading %s (%.1f MB) to Telegram...", video_id, file_size_mb)
 
+    # Get thumbnail URL if available
+    thumbnail = data.get("thumbnail")
+
     # LEARNING: supports_streaming=True tells Telegram this is a video
     # that can be played inline (not just downloaded as a file).
     # Telethon MTProto allows up to 2 GB with full inline player!
+    # thumb parameter accepts URL, file path, or bytes — Telethon downloads URLs automatically.
     await tg.send_file(
         entity=chat_id,
         file=file_path,
         caption=caption,
         supports_streaming=True,
+        thumb=thumbnail,
     )
 
     # Clean up — delete the temp file after successful upload
