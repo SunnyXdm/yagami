@@ -43,9 +43,19 @@ async def run() -> None:
     me = await tg.get_me()
     log.info("Telethon connected as @%s (id=%d)", me.username, me.id)
 
-    # Populate Telethon's entity cache so we can send messages to
-    # users/channels by numeric ID without prior interaction.
-    await tg.get_dialogs()
+    # Pre-resolve all chat entities so Telethon can send by numeric ID.
+    # Bots can't call get_dialogs(), so we resolve each target explicitly.
+    chat_ids = {
+        config.chat_id_likes,
+        config.chat_id_subscriptions,
+        config.chat_id_watch_history,
+        config.admin_user_id,
+    }
+    for cid in chat_ids:
+        try:
+            await tg.get_entity(cid)
+        except Exception as e:
+            log.warning("Could not resolve entity %d: %s", cid, e)
     log.info("Entity cache populated")
 
     # ── NATS ─────────────────────────────────────────────────
