@@ -73,7 +73,7 @@ def format_video_caption(data: dict, part: int | None = None, total: int | None 
     title = data.get("title", "Video")
     channel = _channel(data)
     suffix = f" (Part {part}/{total})" if part and total and total > 1 else ""
-    return f"❤️ {title} — {channel} ({duration}){suffix}"
+    return f"{title} — {channel} ({duration}){suffix}"
 
 
 def _channel(data: dict) -> str:

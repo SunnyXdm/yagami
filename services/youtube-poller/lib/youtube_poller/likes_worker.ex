@@ -45,7 +45,7 @@ defmodule YoutubePoller.LikesWorker do
         YoutubePoller.DB.mark_seeded!(@seed_key)
 
         YoutubePoller.NatsClient.publish_debug(
-          "❤️ Likes seeded: #{length(new_videos)} videos recorded silently"
+          "📋 Likes seeded: #{length(new_videos)} videos recorded silently"
         )
       else
         Logger.info("Found #{length(new_videos)} new liked videos")

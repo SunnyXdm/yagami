@@ -107,10 +107,33 @@ async fn main() -> Result<()> {
 /// The original data stays valid. This is Rust's core memory safety mechanism.
 async fn process_download(request: &DownloadRequest, config: &Config) -> DownloadResult {
     match download::download_video(&request.video_id, &request.url, config).await {
-        Ok(file_path) => {
-            let size = download::get_file_size(&file_path).unwrap_or(0);
+        Ok(output) => {
+            let size = download::get_file_size(&output.file_path).unwrap_or(0);
             info!("Downloaded {} — {} bytes", request.video_id, size);
-            DownloadResult::success(request, file_path, size)
+            let mut result = DownloadResult::success(request, output.file_path, size);
+
+            // Enrich with yt-dlp metadata when the request has placeholder values
+            // (e.g. admin DM downloads only have video_id as title)
+            let meta = output.metadata;
+            if let Some(t) = meta.title {
+                if request.title == request.video_id {
+                    result.title = t;
+                }
+            }
+            if request.channel.is_none() {
+                result.channel = meta.channel;
+            }
+            if request.channel_id.is_none() {
+                result.channel_id = meta.channel_id;
+            }
+            if request.duration.is_none() {
+                result.duration = meta.duration;
+            }
+            if request.thumbnail.is_none() {
+                result.thumbnail = meta.thumbnail;
+            }
+
+            result
         }
         Err(e) => {
             error!("Download failed for {}: {}", request.video_id, e);
