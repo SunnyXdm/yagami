@@ -17,6 +17,7 @@ import tempfile
 import urllib.request
 
 from telethon import TelegramClient
+from telethon.tl.types import DocumentAttributeVideo, DocumentAttributeFilename
 
 from .config import Config
 from .formatter import (
@@ -104,6 +105,13 @@ async def handle_download_complete(
     # Prepare high-quality thumbnail matching the video's aspect ratio
     thumb_path = prepare_thumbnail(data.get("thumbnail"), file_path)
 
+    # Get explicit video dimensions + duration for Telegram metadata.
+    # Without this, Telethon can't detect dimensions (needs hachoir)
+    # and Telegram renders the preview with wrong aspect ratio.
+    video_w, video_h = _get_video_dimensions(file_path)
+    duration_secs = _get_video_duration(file_path)
+    video_attrs = _make_video_attributes(video_id, video_w, video_h, duration_secs)
+
     try:
         if file_size <= MAX_UPLOAD_BYTES:
             # Single file upload
@@ -114,6 +122,7 @@ async def handle_download_complete(
                 caption=caption,
                 supports_streaming=True,
                 thumb=thumb_path,
+                attributes=video_attrs,
             )
             log.info("Uploaded %s to Telegram successfully", video_id)
         else:
@@ -124,12 +133,16 @@ async def handle_download_complete(
 
             for i, part_path in enumerate(parts, 1):
                 caption = format_video_caption(data, part=i, total=total)
+                part_w, part_h = _get_video_dimensions(part_path)
+                part_dur = _get_video_duration(part_path)
+                part_attrs = _make_video_attributes(video_id, part_w or video_w, part_h or video_h, part_dur)
                 await tg.send_file(
                     entity=target_chat,
                     file=part_path,
                     caption=caption,
                     supports_streaming=True,
                     thumb=thumb_path,
+                    attributes=part_attrs,
                 )
                 log.info("Uploaded part %d/%d of %s", i, total, video_id)
 
@@ -204,6 +217,54 @@ def _get_video_dimensions(video_path: str | None) -> tuple[int | None, int | Non
     except Exception as e:
         log.warning("Could not read video dimensions: %s", e)
     return None, None
+
+
+def _get_video_duration(video_path: str | None) -> int:
+    """Extract duration in seconds from a video file using ffprobe."""
+    if not video_path or not os.path.exists(video_path):
+        return 0
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                video_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        return int(float(result.stdout.strip()))
+    except Exception as e:
+        log.warning("Could not read video duration: %s", e)
+    return 0
+
+
+def _make_video_attributes(
+    video_id: str,
+    w: int | None,
+    h: int | None,
+    duration: int,
+) -> list:
+    """Build Telethon document attributes for a video upload.
+
+    Explicitly sets width, height, and duration so Telegram renders the
+    correct aspect ratio in the preview card — Telethon cannot detect
+    these without the hachoir library installed.
+    """
+    attrs = [
+        DocumentAttributeFilename(f"{video_id}.mp4"),
+    ]
+    if w and h:
+        attrs.append(
+            DocumentAttributeVideo(
+                duration=duration,
+                w=w,
+                h=h,
+                supports_streaming=True,
+            )
+        )
+    return attrs
 
 
 def _crop_to_ratio(img, target_w: int, target_h: int):

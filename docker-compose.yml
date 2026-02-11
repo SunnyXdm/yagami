@@ -83,7 +83,7 @@ services:
   telegram-client:
     build: ./services/telegram-client
     volumes:
-      - downloads:/tmp/ytdl:ro
+      - downloads:/tmp/ytdl
       - telegram_session:/app/session
     environment:
       NATS_URL: nats://nats:4222

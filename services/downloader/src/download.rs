@@ -100,7 +100,12 @@ fn find_downloaded_file(dir: &str, video_id: &str) -> Result<String> {
     for entry in std::fs::read_dir(dir)?.filter_map(|e| e.ok()) {
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str.starts_with(video_id) {
+        // Skip metadata files — we only want the actual video file (.mp4, .webm, etc.)
+        if name_str.starts_with(video_id)
+            && !name_str.ends_with(".info.json")
+            && !name_str.ends_with(".part")
+            && !name_str.ends_with(".ytdl")
+        {
             return Ok(entry.path().to_string_lossy().to_string());
         }
     }
@@ -229,5 +234,21 @@ mod tests {
         let result = find_downloaded_file(dir.path().to_str().unwrap(), "vid999");
         assert!(result.is_ok());
         assert!(result.unwrap().contains("vid999"));
+    }
+
+    #[test]
+    fn test_find_downloaded_file_skips_info_json() {
+        let dir = tempfile::tempdir().unwrap();
+        // Only .info.json present — should NOT be found
+        fs::File::create(dir.path().join("abc123.info.json")).unwrap();
+
+        let result = find_downloaded_file(dir.path().to_str().unwrap(), "abc123");
+        assert!(result.is_err());
+
+        // Now add the actual video file — should be found
+        fs::File::create(dir.path().join("abc123.mp4")).unwrap();
+        let result = find_downloaded_file(dir.path().to_str().unwrap(), "abc123");
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("abc123.mp4"));
     }
 }

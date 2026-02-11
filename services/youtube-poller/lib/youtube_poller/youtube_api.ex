@@ -28,7 +28,8 @@ defmodule YoutubePoller.YoutubeApi do
     case fetch_all_pages("#{@base_url}/subscriptions", %{
       part: "snippet",
       mine: true,
-      maxResults: 50
+      maxResults: 50,
+      order: "alphabetical"
     }, token) do
       {:ok, items} -> {:ok, Enum.map(items, &parse_subscription/1)}
       {:error, reason} -> {:error, reason}
