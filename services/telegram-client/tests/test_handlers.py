@@ -16,6 +16,8 @@ from telegram_client.handlers import (
     prepare_thumbnail,
     split_video,
     _safe_remove,
+    _get_video_dimensions,
+    _crop_to_ratio,
 )
 
 
@@ -234,6 +236,47 @@ class TestPrepareThumbnail:
         # Invalid URL should fail gracefully
         result = prepare_thumbnail("not-a-url")
         assert result is None
+
+
+class TestGetVideoDimensions:
+    def test_returns_none_for_no_path(self):
+        assert _get_video_dimensions(None) == (None, None)
+        assert _get_video_dimensions("") == (None, None)
+
+    def test_returns_none_for_missing_file(self):
+        assert _get_video_dimensions("/nonexistent/video.mp4") == (None, None)
+
+    @patch("telegram_client.handlers.subprocess.run")
+    def test_parses_ffprobe_output(self, mock_run):
+        mock_run.return_value = MagicMock(stdout="1920x1080\n")
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as f:
+            w, h = _get_video_dimensions(f.name)
+        assert (w, h) == (1920, 1080)
+
+
+class TestCropToRatio:
+    def test_crop_wider_image(self):
+        from PIL import Image
+        # 4:3 image (400x300) cropped to 16:9 target
+        img = Image.new("RGB", (400, 300))
+        result = _crop_to_ratio(img, 1920, 1080)
+        # Result should be 16:9 ratio
+        w, h = result.size
+        assert abs(w / h - 16 / 9) < 0.02
+
+    def test_already_correct_ratio(self):
+        from PIL import Image
+        img = Image.new("RGB", (320, 180))  # already 16:9
+        result = _crop_to_ratio(img, 1920, 1080)
+        assert result.size == (320, 180)
+
+    def test_crop_taller_image(self):
+        from PIL import Image
+        # Tall image cropped to wide target
+        img = Image.new("RGB", (200, 400))
+        result = _crop_to_ratio(img, 1920, 1080)
+        w, h = result.size
+        assert abs(w / h - 16 / 9) < 0.02
 
 
 # ── split_video (unit logic) ────────────────────────────────
