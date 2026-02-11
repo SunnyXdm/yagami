@@ -13,17 +13,31 @@ defmodule YoutubePoller.Ytdlp do
 
   @doc """
   Scrape watch history using yt-dlp with cookies.
-  Returns a list of maps with video_id, title, channel, duration, etc.
+  Returns {:ok, list_of_maps} or {:error, reason}.
   """
   def scrape_watch_history do
     cookies_path = Application.get_env(:youtube_poller, :cookies_path)
 
+    # Validate cookies exist before proceeding
+    unless File.exists?(cookies_path) do
+      Logger.error("Cookies file not found at #{cookies_path}")
+      return_error("Cookies file not found at #{cookies_path}. Check COOKIES_PATH env var and volume mount.")
+    else
+      run_scrape(cookies_path)
+    end
+  end
+
+  defp run_scrape(cookies_path) do
     # Copy cookies to a writable temp path (Docker mounts them read-only)
     writable_cookies = "/tmp/cookies.txt"
+
     case File.cp(cookies_path, writable_cookies) do
-      :ok -> :ok
+      :ok ->
+        Logger.info("Cookies copied to writable path")
+
       {:error, reason} ->
-        Logger.warning("Could not copy cookies to writable path: #{inspect(reason)}")
+        Logger.error("Could not copy cookies to writable path: #{inspect(reason)}")
+        return_error("Could not copy cookies: #{inspect(reason)}")
     end
 
     args = [
@@ -34,6 +48,8 @@ defmodule YoutubePoller.Ytdlp do
       "--js-runtimes", "nodejs",
       "https://www.youtube.com/feed/history"
     ]
+
+    Logger.info("Running yt-dlp with cookies from #{cookies_path}")
 
     case System.cmd("yt-dlp", args, stderr_to_stdout: true) do
       {output, 0} ->
@@ -47,10 +63,13 @@ defmodule YoutubePoller.Ytdlp do
         {:ok, videos}
 
       {output, code} ->
-        Logger.error("yt-dlp failed (exit #{code}): #{String.slice(output, 0, 200)}")
-        {:error, :ytdlp_failed}
+        truncated = String.slice(output, 0, 500)
+        Logger.error("yt-dlp failed (exit #{code}): #{truncated}")
+        {:error, "yt-dlp exit #{code}: #{String.slice(truncated, 0, 200)}"}
     end
   end
+
+  defp return_error(msg), do: {:error, msg}
 
   # LEARNING: Each JSON line from yt-dlp is a video entry. We parse it and
   # extract only the fields we need. Jason.decode/1 returns {:ok, map} or {:error, _}.
@@ -63,7 +82,8 @@ defmodule YoutubePoller.Ytdlp do
           channel: data["channel"] || data["uploader"],
           channel_id: data["channel_id"] || data["uploader_id"],
           duration: format_duration(data["duration"]),
-          url: data["url"] || "https://www.youtube.com/watch?v=#{data["id"]}"
+          url: data["url"] || "https://www.youtube.com/watch?v=#{data["id"]}",
+          thumbnail: data["thumbnail"]
         }
 
       {:error, _} ->

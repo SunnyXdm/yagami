@@ -14,9 +14,10 @@ LEARNING (Python):
 import asyncio
 import json
 import logging
+import re
 
 import nats
-from telethon import TelegramClient
+from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 
 from .config import Config
@@ -24,18 +25,16 @@ from .handlers import handle_event
 
 log = logging.getLogger(__name__)
 
+# Matches youtube.com/watch?v=, youtu.be/, youtube.com/shorts/
+YOUTUBE_RE = re.compile(
+    r"(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})"
+)
+
 
 async def run() -> None:
     config = Config.from_env()
 
     # ── Telethon (Telegram MTProto) ──────────────────────────
-    #
-    # StringSession stores the auth session as a base64 string.
-    # On first run, session_string is empty → Telethon will prompt
-    # for phone number and verification code in the terminal.
-    # After auth, run scripts/gen-session.py to get the string
-    # and put it in .env so subsequent starts are automatic.
-
     session = StringSession(config.session_string)
     tg = TelegramClient(session, config.api_id, config.api_hash)
     await tg.start()
@@ -44,7 +43,6 @@ async def run() -> None:
     log.info("Telethon connected as @%s (id=%d)", me.username, me.id)
 
     # Pre-resolve all chat entities so Telethon can send by numeric ID.
-    # Bots can't call get_dialogs(), so we resolve each target explicitly.
     chat_ids = {
         config.chat_id_likes,
         config.chat_id_subscriptions,
@@ -72,11 +70,6 @@ async def run() -> None:
         "system.health":         config.admin_user_id,
     }
 
-    # LEARNING: We need a factory function here because Python closures
-    # capture *variables*, not *values*. Without this, every callback
-    # would use the last values of `subject` and `chat_id` from the loop.
-    # This is the same "closure in a loop" gotcha as in JavaScript.
-
     def make_handler(subject: str, chat_id: int):
         async def handler(msg):
             try:
@@ -90,11 +83,40 @@ async def run() -> None:
         await nc.subscribe(subject, cb=make_handler(subject, chat_id))
         log.info("Subscribed: %s → chat %d", subject, chat_id)
 
+    # ── Admin DM handler — download YouTube links on demand ──
+
+    if config.admin_user_id:
+        @tg.on(events.NewMessage(from_users=[config.admin_user_id]))
+        async def on_admin_message(event):
+            """When admin sends a YouTube URL, download and send it back."""
+            text = event.message.text or ""
+            match = YOUTUBE_RE.search(text)
+            if not match:
+                return
+
+            video_id = match.group(1)
+            url = f"https://www.youtube.com/watch?v={video_id}"
+
+            log.info("Admin requested download: %s", url)
+            await event.reply(f"`Downloading {video_id}...`")
+
+            # Publish download request with admin's chat as the destination
+            await nc.publish(
+                "download.request",
+                json.dumps({
+                    "video_id": video_id,
+                    "title": video_id,
+                    "url": url,
+                    "requester_chat_id": config.admin_user_id,
+                }).encode(),
+            )
+
+        log.info("Admin DM handler registered for user %d", config.admin_user_id)
+
     # ── Run forever ──────────────────────────────────────────
 
     log.info("Telegram client ready — waiting for events...")
     try:
-        # asyncio.Event().wait() blocks forever without burning CPU.
         await asyncio.Event().wait()
     finally:
         await nc.close()

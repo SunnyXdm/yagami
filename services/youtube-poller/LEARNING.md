@@ -80,6 +80,10 @@ else
 end
 ```
 
+All workers use this pattern to chain token retrieval → API call →
+processing. If any step fails, the `else` block handles the error and
+a debug message is sent to the admin via NATS (`publish_debug/1`).
+
 ### 6. Immutability
 All data is immutable. "Updating" creates a new copy:
 ```elixir
@@ -121,6 +125,27 @@ new = Enum.reject(current, fn v -> MapSet.member?(known_ids, v.video_id) end)
 # Like subprocess.run() in Python
 {output, exit_code} = System.cmd("yt-dlp", ["--flat-playlist", "-j", url])
 ```
+
+### Tagged Tuple Error Handling
+API functions return `{:ok, data}` or `{:error, reason}` — never partial
+results. `fetch_all_pages` used to silently return whatever it had
+accumulated when a page request failed, causing the subscription worker
+to see incomplete lists and report false unsubscriptions. Now it returns
+`{:error, reason}` on any failure so callers can skip the cycle.
+
+### Debug Messaging via NATS
+Workers publish admin-facing debug messages to `system.health`:
+```elixir
+NatsClient.publish_debug("⚠️ History scrape failed: #{reason}")
+```
+The telegram-client forwards these to the admin's DM. This replaces
+staring at logs.
+
+### Threshold Protection (Subscriptions)
+If a single poll cycle detects >10 subscription changes, it's almost
+certainly caused by an API pagination hiccup — not real activity. The
+worker skips the cycle and notifies the admin instead of spamming the
+channel.
 
 ## Common Gotchas
 

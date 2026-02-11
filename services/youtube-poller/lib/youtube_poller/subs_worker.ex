@@ -32,8 +32,8 @@ defmodule YoutubePoller.SubsWorker do
   defp poll do
     Logger.info("Polling subscriptions...")
 
-    with {:ok, token} <- YoutubePoller.OAuth.get_token() do
-      subs = YoutubePoller.YoutubeApi.list_subscriptions(token)
+    with {:ok, token} <- YoutubePoller.OAuth.get_token(),
+         {:ok, subs} <- YoutubePoller.YoutubeApi.list_subscriptions(token) do
       known = YoutubePoller.DB.get_known_subscriptions()
       current_ids = MapSet.new(subs, fn s -> s.channel_id end)
       known_ids = MapSet.new(Map.keys(known))
@@ -49,33 +49,54 @@ defmodule YoutubePoller.SubsWorker do
           YoutubePoller.DB.remove_known_subscription(channel_id)
         end
         YoutubePoller.DB.mark_seeded!(@seed_key)
+
+        YoutubePoller.NatsClient.publish_debug(
+          "📋 Subscriptions seeded: #{length(subs)} channels recorded silently"
+        )
       else
-        # New subscriptions
         new_ids = MapSet.difference(current_ids, known_ids)
-        new_subs = Enum.filter(subs, fn s -> MapSet.member?(new_ids, s.channel_id) end)
-
-        for sub <- new_subs do
-          YoutubePoller.DB.insert_known_subscription(sub.channel_id, sub.channel_title)
-          YoutubePoller.DB.insert_event("subscription", sub)
-          YoutubePoller.NatsClient.publish("youtube.subscriptions", Map.put(sub, :action, "subscribed"))
-          Logger.info("New subscription: #{sub.channel_title}")
-        end
-
-        # Lost subscriptions
         lost_ids = MapSet.difference(known_ids, current_ids)
 
-        for channel_id <- lost_ids do
-          channel_title = Map.get(known, channel_id) || "Unknown"
-          YoutubePoller.DB.remove_known_subscription(channel_id)
-          YoutubePoller.DB.insert_event("unsubscription", %{channel_id: channel_id, channel_title: channel_title})
-          YoutubePoller.NatsClient.publish("youtube.subscriptions", %{channel_id: channel_id, channel_title: channel_title, action: "unsubscribed"})
-          Logger.info("Unsubscribed from: #{channel_title}")
-        end
+        # Safety check: if we see a suspiciously large diff (>10 changes at once),
+        # it's likely an API pagination issue — skip this poll cycle.
+        total_changes = MapSet.size(new_ids) + MapSet.size(lost_ids)
 
-        Logger.info("Subs check: #{length(new_subs)} new, #{MapSet.size(lost_ids)} removed")
+        if total_changes > 10 do
+          Logger.warning("Suspicious diff: #{MapSet.size(new_ids)} new, #{MapSet.size(lost_ids)} lost — skipping (likely API pagination issue)")
+
+          YoutubePoller.NatsClient.publish_debug(
+            "⚠️ Subscriptions: skipped poll — #{total_changes} changes detected, likely API pagination issue (#{length(subs)} fetched vs #{map_size(known)} known)"
+          )
+        else
+          # New subscriptions
+          new_subs = Enum.filter(subs, fn s -> MapSet.member?(new_ids, s.channel_id) end)
+
+          for sub <- new_subs do
+            YoutubePoller.DB.insert_known_subscription(sub.channel_id, sub.channel_title)
+            YoutubePoller.DB.insert_event("subscription", sub)
+            YoutubePoller.NatsClient.publish("youtube.subscriptions", Map.put(sub, :action, "subscribed"))
+            Logger.info("New subscription: #{sub.channel_title}")
+          end
+
+          # Lost subscriptions
+          for channel_id <- lost_ids do
+            channel_title = Map.get(known, channel_id) || "Unknown"
+            YoutubePoller.DB.remove_known_subscription(channel_id)
+            YoutubePoller.DB.insert_event("unsubscription", %{channel_id: channel_id, channel_title: channel_title})
+            YoutubePoller.NatsClient.publish("youtube.subscriptions", %{channel_id: channel_id, channel_title: channel_title, action: "unsubscribed"})
+            Logger.info("Unsubscribed from: #{channel_title}")
+          end
+
+          Logger.info("Subs check: #{length(new_subs)} new, #{MapSet.size(lost_ids)} removed")
+        end
       end
     else
-      {:error, reason} -> Logger.error("Failed to poll subscriptions: #{inspect(reason)}")
+      {:error, reason} ->
+        Logger.error("Failed to poll subscriptions: #{inspect(reason)}")
+
+        YoutubePoller.NatsClient.publish_debug(
+          "⚠️ Subscriptions poll failed: #{inspect(reason)}"
+        )
     end
   end
 end

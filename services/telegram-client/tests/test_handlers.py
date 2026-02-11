@@ -1,6 +1,7 @@
 """Tests for event handlers — uses mocks for Telegram and filesystem."""
 
 import json
+import math
 import os
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,7 +9,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from telegram_client.config import Config
-from telegram_client.handlers import handle_download_complete, handle_event
+from telegram_client.handlers import (
+    MAX_UPLOAD_BYTES,
+    handle_download_complete,
+    handle_event,
+    prepare_thumbnail,
+    split_video,
+    _safe_remove,
+)
 
 
 def make_config(**overrides) -> Config:
@@ -118,7 +126,6 @@ class TestHandleDownloadComplete:
 
     @pytest.mark.asyncio
     async def test_successful_upload(self, mock_tg):
-        # Create a real temp file so os.path.exists + os.path.getsize work
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
             f.write(b"fake video data" * 100)
             temp_path = f.name
@@ -131,26 +138,19 @@ class TestHandleDownloadComplete:
                 "success": True,
                 "file_path": temp_path,
                 "duration_seconds": 120,
-                "thumbnail": "https://i.ytimg.com/vi/v3/hqdefault.jpg",
             }
             await handle_download_complete(mock_tg, -100111, data)
 
-            # Should have called send_file, not send_message
             mock_tg.send_file.assert_called_once()
             call_kwargs = mock_tg.send_file.call_args[1]
             assert call_kwargs["entity"] == -100111
             assert call_kwargs["file"] == temp_path
             assert call_kwargs["supports_streaming"] is True
-            # Thumbnail should be downloaded to a temp file path (or None if download fails)
-            thumb = call_kwargs["thumb"]
-            assert thumb is None or (isinstance(thumb, str) and thumb.endswith(".jpg"))
             assert "Good Video" in call_kwargs["caption"]
 
             # Temp file should be deleted after upload
             assert not os.path.exists(temp_path)
-            # Thumbnail temp file should also be deleted if it was created
         finally:
-            # Clean up in case test failed before handler deleted it
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
 
@@ -182,3 +182,86 @@ class TestHandleDownloadComplete:
         finally:
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
+
+    @pytest.mark.asyncio
+    async def test_requester_chat_id_overrides_target(self, mock_tg):
+        """Admin-requested downloads go to the requester, not the likes channel."""
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"data")
+            temp_path = f.name
+
+        try:
+            data = {
+                "video_id": "v6",
+                "title": "Admin Vid",
+                "success": True,
+                "file_path": temp_path,
+                "requester_chat_id": 999,
+            }
+            await handle_download_complete(mock_tg, -100111, data)
+            mock_tg.send_file.assert_called_once()
+            call_kwargs = mock_tg.send_file.call_args[1]
+            # Should send to requester (999), not default chat (-100111)
+            assert call_kwargs["entity"] == 999
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+    @pytest.mark.asyncio
+    async def test_failed_download_goes_to_requester(self, mock_tg):
+        """Error messages also go to the requester for admin downloads."""
+        data = {
+            "video_id": "v7",
+            "title": "Fail",
+            "success": False,
+            "error": "network",
+            "requester_chat_id": 888,
+        }
+        await handle_download_complete(mock_tg, -100111, data)
+        # Error sent to requester (888), not default
+        assert mock_tg.send_message.call_args[0][0] == 888
+
+
+# ── prepare_thumbnail ───────────────────────────────────────
+
+
+class TestPrepareThumbnail:
+    def test_returns_none_for_no_url(self):
+        assert prepare_thumbnail(None) is None
+        assert prepare_thumbnail("") is None
+
+    def test_returns_none_on_error(self):
+        # Invalid URL should fail gracefully
+        result = prepare_thumbnail("not-a-url")
+        assert result is None
+
+
+# ── split_video (unit logic) ────────────────────────────────
+
+
+class TestSplitVideoConstants:
+    def test_max_upload_constant(self):
+        assert MAX_UPLOAD_BYTES == 1_950_000_000
+
+    def test_part_calculation(self):
+        """Verify the number of parts for a given file size."""
+        assert math.ceil(4_000_000_000 / MAX_UPLOAD_BYTES) == 3
+        assert math.ceil(2_000_000_000 / MAX_UPLOAD_BYTES) == 2
+        assert math.ceil(1_900_000_000 / MAX_UPLOAD_BYTES) == 1
+
+
+# ── _safe_remove ────────────────────────────────────────────
+
+
+class TestSafeRemove:
+    def test_removes_existing_file(self):
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            path = f.name
+        _safe_remove(path)
+        assert not os.path.exists(path)
+
+    def test_ignores_none(self):
+        _safe_remove(None)  # Should not raise
+
+    def test_ignores_missing_file(self):
+        _safe_remove("/nonexistent/file.tmp")  # Should not raise

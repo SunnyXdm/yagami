@@ -36,6 +36,56 @@ for humans and editors. Using them consistently catches bugs early.
 `formatter.py` contains only pure functions (input → output, no
 side effects). This makes them trivially testable with `pytest`.
 
+### 6. Telethon Event Handlers
+`events.NewMessage` lets you react to incoming messages. We use it to
+detect when the admin sends a YouTube link via DM:
+```python
+@tg.on(events.NewMessage(from_users=[admin_id]))
+async def on_admin_message(event):
+    match = YOUTUBE_RE.search(event.raw_text)
+    if match:
+        video_id = match.group("id")
+        await event.reply(f"⏳ Downloading {video_id}...")
+        # publish download request via NATS
+```
+
+**Study**: `client.py` — the `@tg.on(events.NewMessage(...))` handler.
+
+### 7. Pillow for Image Processing
+Telegram thumbnails must be ≤320px on each side. We use Pillow's
+`Image.LANCZOS` resampling (highest quality) to resize downloaded
+thumbnails before uploading:
+```python
+from PIL import Image
+img = Image.open(path)
+img.thumbnail((320, 320), Image.LANCZOS)
+img.save(out, "JPEG", quality=95)
+```
+
+**Study**: `handlers.py` — `prepare_thumbnail()`.
+
+### 8. ffmpeg for Video Splitting
+Telegram limits uploads to ~2 GB. We use `ffprobe` to read the duration,
+calculate how many parts are needed, then use `ffmpeg -c copy` (no
+re-encoding, instant) to split by time:
+```python
+subprocess.run(["ffmpeg", "-ss", start, "-to", end,
+                "-i", path, "-c", "copy", part_path])
+```
+
+**Study**: `handlers.py` — `split_video()`.
+
+### 9. Regex for URL Parsing
+A compiled regex extracts YouTube video IDs from several URL formats
+(watch, youtu.be, shorts):
+```python
+YOUTUBE_RE = re.compile(
+    r"(?:youtu\.be/|youtube\.com/(?:watch\?v=|shorts/))(?P<id>[\w-]{11})"
+)
+```
+
+**Study**: `client.py` — `YOUTUBE_RE` and how it's used in the handler.
+
 ---
 
 ## Common Gotchas

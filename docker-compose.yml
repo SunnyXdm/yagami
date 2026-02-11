@@ -57,9 +57,10 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN}
-      YOUTUBE_POLL_INTERVAL_LIKES: "120"
-      YOUTUBE_POLL_INTERVAL_SUBS: "600"
-      YOUTUBE_POLL_INTERVAL_HISTORY: "300"
+      COOKIES_PATH: /config/cookies.txt
+      POLL_INTERVAL_LIKES: "120"
+      POLL_INTERVAL_SUBS: "600"
+      POLL_INTERVAL_HISTORY: "300"
     depends_on:
       postgres: { condition: service_healthy }
       nats:     { condition: service_started }

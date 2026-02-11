@@ -1243,7 +1243,7 @@ You know JS/TS well, and Python is close enough. Key focuses:
 | # | Question | Options | Recommendation |
 |---|---|---|---|
 | 1 | **Watch history polling frequency?** | Every 2 min (aggressive) vs. every 10 min (safe) | Every 5 min — good balance between timeliness and not hammering YouTube |
-| 2 | **Video quality for downloads?** | Best available vs. 1080p cap vs. 720p cap | Best available with `--max-filesize 2G` — Telethon handles up to 2 GB |
+| 2 | **Video quality for downloads?** | Best available vs. 1080p cap vs. 720p cap | Best available — no max file size limit. Videos >2 GB are split into parts by telegram-client using ffmpeg |
 | 3 | **Download trigger**: All likes or opt-in? | Auto-download all likes vs. bot command per video | Auto-download all likes (with `/config` to toggle) |
 | 4 | **Telethon auth**: Session string or session file? | Environment variable vs. mounted file | Session string (env var) — simpler Docker setup, no volume needed for session |
 | 5 | **Cookies for yt-dlp**: Manual export or auto? | Manual cookie file vs. build cookie exporter | Manual for v1 — auto is complex and browser-dependent in Docker |
@@ -1354,6 +1354,45 @@ yagami/
 
 ---
 
+## Post-v1 Changes (Implemented)
+
+These features and fixes were added after the initial v1 build:
+
+### Admin DM Downloads
+The admin can send a YouTube link to the bot via DM. The bot downloads the
+video and sends it back to the admin. This uses a `requester_chat_id` field
+on the download request/result to route the video to the admin instead of the
+likes channel.
+
+### Video Splitting (>2 GB)
+Videos larger than ~2 GB are automatically split into time-based parts using
+`ffmpeg -c copy` (no re-encoding). Each part is uploaded as "Part 1/3" etc.
+The `--max-filesize` limit was removed from the downloader so any video can
+be downloaded.
+
+### High-Quality Thumbnails
+Thumbnails now use `maxres` (1280×720) with fallback to standard/high. Before
+upload, they are resized using Pillow's LANCZOS resampling at JPEG quality 95
+to produce sharp 320×320 thumbnails instead of blurry ones.
+
+### Debug Messaging
+All workers send admin-facing debug messages via NATS (`system.health`) for
+events like seeding, errors, and suspicious subscription diffs. The
+telegram-client forwards these to the admin's DM.
+
+### Subscription False-Positive Fix
+`fetch_all_pages` now returns `{:ok, items}` or `{:error, reason}` — never
+partial data. A failed API page silently returning accumulated results was the
+root cause of random subscribe/unsubscribe spam. A threshold check (>10
+changes = suspicious) provides additional protection.
+
+### Watch History Fix
+Added `COOKIES_PATH` env var to docker-compose for the youtube-poller service.
+It was defaulting to `/app/cookies.txt` instead of the mounted path
+`/config/cookies.txt`, so watch history never worked.
+
+---
+
 ## Summary
 
 This is a **polyglot microservice system** with 4 services in 4 languages (Go, Elixir, Rust, Python), communicating over NATS JetStream, persisting to PostgreSQL, and fully containerised with Docker Compose.
@@ -1363,6 +1402,9 @@ This is a **polyglot microservice system** with 4 services in 4 languages (Go, E
 - **MTProto via Telethon** (not Bot API) — 2 GB video uploads with full inline video player
 - **3 separate Telegram channels** — one each for likes, subscriptions, and watch history
 - **Fully autonomous** — once `docker compose up` runs, everything operates without human intervention
+- **Admin DM downloads** — send a YouTube link to the bot, get the video back
+- **Video splitting** — files >2 GB are split into parts using ffmpeg (no re-encoding)
+- **Debug messaging** — system issues are reported to the admin's DM, not just logs
 
 **The hardest problems are already solved in this plan**:
 - Watch history → yt-dlp scrapes `youtube.com/feed/history` with cookies (no browser extension needed)

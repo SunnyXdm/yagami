@@ -23,6 +23,11 @@ defmodule YoutubePoller.NatsClient do
     GenServer.call(__MODULE__, {:publish, subject, Jason.encode!(data)})
   end
 
+  @doc "Send a debug/error message to the admin via NATS."
+  def publish_debug(message) when is_binary(message) do
+    publish("system.health", %{type: "debug", message: message})
+  end
+
   # --- GenServer callbacks ---
 
   @impl true

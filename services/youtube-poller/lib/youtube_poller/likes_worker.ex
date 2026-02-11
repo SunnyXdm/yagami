@@ -33,8 +33,8 @@ defmodule YoutubePoller.LikesWorker do
   defp poll do
     Logger.info("Polling liked videos...")
 
-    with {:ok, token} <- YoutubePoller.OAuth.get_token() do
-      videos = YoutubePoller.YoutubeApi.list_liked_videos(token)
+    with {:ok, token} <- YoutubePoller.OAuth.get_token(),
+         {:ok, videos} <- YoutubePoller.YoutubeApi.list_liked_videos(token) do
       known_ids = YoutubePoller.DB.get_known_like_ids()
       new_videos = Enum.reject(videos, fn v -> MapSet.member?(known_ids, v.video_id) end)
 
@@ -43,6 +43,10 @@ defmodule YoutubePoller.LikesWorker do
         Logger.info("Seeding #{length(new_videos)} existing liked videos (no notifications)")
         for video <- new_videos, do: YoutubePoller.DB.insert_known_like(video.video_id)
         YoutubePoller.DB.mark_seeded!(@seed_key)
+
+        YoutubePoller.NatsClient.publish_debug(
+          "❤️ Likes seeded: #{length(new_videos)} videos recorded silently"
+        )
       else
         Logger.info("Found #{length(new_videos)} new liked videos")
 
@@ -66,7 +70,12 @@ defmodule YoutubePoller.LikesWorker do
         end
       end
     else
-      {:error, reason} -> Logger.error("Failed to poll likes: #{inspect(reason)}")
+      {:error, reason} ->
+        Logger.error("Failed to poll likes: #{inspect(reason)}")
+
+        YoutubePoller.NatsClient.publish_debug(
+          "⚠️ Likes poll failed: #{inspect(reason)}"
+        )
     end
   end
 end

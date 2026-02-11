@@ -17,6 +17,9 @@ pub struct DownloadRequest {
     pub channel_id: Option<String>,
     pub duration: Option<String>,
     pub thumbnail: Option<String>,
+    /// If set, the completed download is sent to this chat instead of the likes channel.
+    /// Used for admin-requested downloads via DM.
+    pub requester_chat_id: Option<i64>,
 }
 
 /// Outgoing result published to NATS (telegram-client consumes these)
@@ -33,6 +36,8 @@ pub struct DownloadResult {
     pub channel_id: Option<String>,
     pub duration: Option<String>,
     pub thumbnail: Option<String>,
+    /// Forwarded from request — routes the result to the requester's chat
+    pub requester_chat_id: Option<i64>,
 }
 
 /// LEARNING: `impl` blocks add methods to a struct. Rust doesn't have
@@ -50,6 +55,7 @@ impl DownloadResult {
             channel_id: req.channel_id.clone(),
             duration: req.duration.clone(),
             thumbnail: req.thumbnail.clone(),
+            requester_chat_id: req.requester_chat_id,
         }
     }
 
@@ -65,6 +71,7 @@ impl DownloadResult {
             channel_id: req.channel_id.clone(),
             duration: req.duration.clone(),
             thumbnail: req.thumbnail.clone(),
+            requester_chat_id: req.requester_chat_id,
         }
     }
 }
@@ -84,6 +91,7 @@ mod tests {
             channel_id: Some("UC123".into()),
             duration: Some("3:45".into()),
             thumbnail: None,
+            requester_chat_id: None,
         }
     }
 

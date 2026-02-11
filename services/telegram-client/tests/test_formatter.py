@@ -174,3 +174,13 @@ class TestFormatVideoCaption:
     def test_missing_fields(self):
         result = format_video_caption({})
         assert "Video" in result  # default title
+
+    def test_part_numbering(self):
+        data = {"title": "Big Video", "channel": "Ch", "duration": "1:00:00"}
+        result = format_video_caption(data, part=1, total=3)
+        assert "(Part 1/3)" in result
+
+    def test_single_part_no_label(self):
+        data = {"title": "Small Video", "channel": "Ch", "duration": "5:00"}
+        result = format_video_caption(data, part=1, total=1)
+        assert "Part" not in result

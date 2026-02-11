@@ -11,24 +11,28 @@ defmodule YoutubePoller.YoutubeApi do
 
   @base_url "https://www.googleapis.com/youtube/v3"
 
-  @doc "Fetch all liked videos (auto-paginates)."
+  @doc "Fetch all liked videos (auto-paginates). Returns {:ok, list} or {:error, reason}."
   def list_liked_videos(token) do
-    fetch_all_pages("#{@base_url}/videos", %{
+    case fetch_all_pages("#{@base_url}/videos", %{
       part: "snippet,contentDetails",
       myRating: "like",
       maxResults: 50
-    }, token)
-    |> Enum.map(&parse_video/1)
+    }, token) do
+      {:ok, items} -> {:ok, Enum.map(items, &parse_video/1)}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
-  @doc "Fetch all subscriptions (auto-paginates)."
+  @doc "Fetch all subscriptions (auto-paginates). Returns {:ok, list} or {:error, reason}."
   def list_subscriptions(token) do
-    fetch_all_pages("#{@base_url}/subscriptions", %{
+    case fetch_all_pages("#{@base_url}/subscriptions", %{
       part: "snippet",
       mine: true,
       maxResults: 50
-    }, token)
-    |> Enum.map(&parse_subscription/1)
+    }, token) do
+      {:ok, items} -> {:ok, Enum.map(items, &parse_subscription/1)}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   # --- Private helpers ---
@@ -36,6 +40,8 @@ defmodule YoutubePoller.YoutubeApi do
   # LEARNING: Recursive function with accumulator pattern.
   # Each call fetches one page and passes the nextPageToken to the next call.
   # When there's no next page, we return the accumulated items.
+  # On error, returns {:error, reason} instead of partial data — this prevents
+  # false diffs when only some pages succeed.
   defp fetch_all_pages(url, params, token, page_token \\ nil, acc \\ []) do
     params =
       if page_token do
@@ -55,16 +61,16 @@ defmodule YoutubePoller.YoutubeApi do
         if next do
           fetch_all_pages(url, params, token, next, all)
         else
-          all
+          {:ok, all}
         end
 
       {:ok, %{status: status, body: body}} ->
         Logger.error("YouTube API error: #{status} — #{inspect(body)}")
-        acc
+        {:error, "YouTube API HTTP #{status}"}
 
       {:error, reason} ->
         Logger.error("YouTube API request failed: #{inspect(reason)}")
-        acc
+        {:error, reason}
     end
   end
 
@@ -77,7 +83,7 @@ defmodule YoutubePoller.YoutubeApi do
       title: snippet["title"],
       channel: snippet["channelTitle"],
       channel_id: snippet["channelId"],
-      thumbnail: get_in(snippet, ["thumbnails", "high", "url"]),
+      thumbnail: best_thumbnail(snippet),
       duration: parse_duration(content["duration"]),
       published_at: snippet["publishedAt"]
     }
@@ -90,9 +96,21 @@ defmodule YoutubePoller.YoutubeApi do
     %{
       channel_id: resource["channelId"],
       channel_title: snippet["title"],
-      thumbnail: get_in(snippet, ["thumbnails", "high", "url"]),
+      thumbnail: best_thumbnail(snippet),
       subscribed_at: snippet["publishedAt"]
     }
+  end
+
+  # Pick the highest quality thumbnail available.
+  # YouTube provides: default (120x90), medium (320x180), high (480x360),
+  # standard (640x480), maxres (1280x720). Not all are always present.
+  defp best_thumbnail(snippet) do
+    thumbs = snippet["thumbnails"] || %{}
+
+    (get_in(thumbs, ["maxres", "url"]) ||
+       get_in(thumbs, ["standard", "url"]) ||
+       get_in(thumbs, ["high", "url"]) ||
+       get_in(thumbs, ["medium", "url"]))
   end
 
   @doc """

@@ -68,11 +68,12 @@ def format_subscription(data: dict) -> str:
     return f"`Subscribed to` {channel}\n\nhttps://youtube.com/channel/{channel_id}"
 
 
-def format_video_caption(data: dict) -> str:
+def format_video_caption(data: dict, part: int | None = None, total: int | None = None) -> str:
     duration = data.get("duration") or format_duration(data.get("duration_seconds"))
     title = data.get("title", "Video")
     channel = _channel(data)
-    return f"❤️ {title} — {channel} ({duration})"
+    suffix = f" (Part {part}/{total})" if part and total and total > 1 else ""
+    return f"❤️ {title} — {channel} ({duration}){suffix}"
 
 
 def _channel(data: dict) -> str:

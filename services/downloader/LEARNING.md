@@ -56,6 +56,11 @@ match user.email {
 }
 ```
 
+We use `Option<i64>` for `requester_chat_id` in download messages — it's
+only `Some(chat_id)` when the admin triggered the download via DM, and
+`None` for regular channel updates. This lets the telegram-client route
+the finished video to the right place.
+
 ### 4. async/await with Tokio
 Like Python's asyncio, but with ownership rules:
 
@@ -147,6 +152,12 @@ while let Some(msg) = subscriber.next().await {
     tokio::spawn(handle(request));
 }
 ```
+
+### No Max File Size
+The downloader does not impose `--max-filesize` on yt-dlp. Large videos
+are downloaded in full and the telegram-client handles splitting files
+that exceed Telegram's ~2 GB upload limit. This keeps the downloader
+simple — it just downloads.
 
 ## Common Gotchas
 

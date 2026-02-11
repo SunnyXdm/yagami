@@ -45,8 +45,6 @@ pub async fn download_video(video_id: &str, url: &str, config: &Config) -> Resul
         "-o".to_string(),
         output_template,
         "--no-playlist".to_string(),
-        "--max-filesize".to_string(),
-        format!("{}M", config.max_file_size_mb),
         "--js-runtimes".to_string(),
         "nodejs".to_string(),
     ];

@@ -1,6 +1,6 @@
 # Yagami — YouTube Activity Monitor
 
-Yagami watches your YouTube activity (likes, subscriptions, watch history) and forwards everything to Telegram channels in real-time. It also downloads liked videos via yt-dlp and uploads them to Telegram using MTProto for files up to 2GB.
+Yagami watches your YouTube activity (likes, subscriptions, watch history) and forwards everything to Telegram channels in real-time. It also downloads liked videos via yt-dlp and uploads them to Telegram using MTProto for files up to 2GB. Videos larger than 2GB are automatically split into parts.
 
 **Built with 4 languages to learn them all:**
 
@@ -10,6 +10,17 @@ Yagami watches your YouTube activity (likes, subscriptions, watch history) and f
 | **YouTube Poller** | Elixir | Polls YouTube for new activity, publishes to NATS |
 | **Downloader** | Rust | Downloads liked videos using yt-dlp |
 | **Telegram Client** | Python | Sends notifications + uploads videos via MTProto |
+
+## Features
+
+- **Liked videos** — notified instantly, downloaded and uploaded to Telegram
+- **Subscriptions** — new/lost subscriptions detected via API diffing
+- **Watch history** — scraped via yt-dlp + cookies (not available via API)
+- **Admin DM downloads** — send a YouTube link to the bot, it downloads and sends the video back
+- **Large video splitting** — videos >2GB are split into parts using ffmpeg
+- **High-quality thumbnails** — uses maxres YouTube thumbnails (1280×720)
+- **Debug messages** — errors and status updates sent to admin via Telegram
+- **Monospace formatting** — clean, minimal Telegram notifications
 
 ## Architecture
 
@@ -146,7 +157,6 @@ All configuration is via environment variables (see `.env.example`):
 | `POLL_INTERVAL_SUBS` | `3600` | Seconds between subscription polls |
 | `POLL_INTERVAL_HISTORY` | `600` | Seconds between history scrapes |
 | `MAX_CONCURRENT_DOWNLOADS` | `3` | Parallel yt-dlp downloads |
-| `MAX_FILE_SIZE_MB` | `2000` | Skip videos larger than this |
 
 ## API Endpoints
 
@@ -250,7 +260,14 @@ Run `python3 scripts/oauth-setup.py` with the database running.
 ### Watch history not working
 - Check that `config/cookies.txt` exists and is valid
 - Cookies expire — re-export them periodically
+- Ensure `COOKIES_PATH` env var matches the mount path (`/config/cookies.txt`)
+- Debug messages are sent to the admin's Telegram — check there for yt-dlp errors
 - Test manually: `yt-dlp --flat-playlist -j --cookies config/cookies.txt "https://www.youtube.com/feed/history" | head -1`
+
+### Subscriptions showing false changes
+- Partial API responses (pagination errors) are now detected and skipped
+- If >10 changes are detected in one poll, it's treated as suspicious and ignored
+- Debug logs are sent to the admin for visibility
 
 ### "Failed to connect to NATS"
 NATS might not be ready yet. The services will retry on restart:
@@ -263,8 +280,15 @@ docker compose restart youtube-poller telegram-client downloader
 - Verify channel IDs start with `-100`
 - Ensure your account is an admin of the channels
 
-### Large videos skipped
-Increase `MAX_FILE_SIZE_MB` in `.env` (Telegram MTProto supports up to 2GB).
+### Large videos (>2GB)
+Videos larger than 2 GB are automatically split into parts using ffmpeg and
+uploaded sequentially. Each part is labelled "(Part 1/3)" etc. in the caption.
+
+### Admin DM download
+Send any YouTube link to the bot in a DM. Supported formats:
+- `https://www.youtube.com/watch?v=VIDEO_ID`
+- `https://youtu.be/VIDEO_ID`
+- `https://youtube.com/shorts/VIDEO_ID`
 
 ## Stopping
 

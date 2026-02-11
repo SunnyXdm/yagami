@@ -33,6 +33,7 @@ defmodule YoutubePoller.HistoryWorker do
 
     case YoutubePoller.Ytdlp.scrape_watch_history() do
       {:ok, videos} ->
+        Logger.info("yt-dlp returned #{length(videos)} videos from history")
         known_ids = YoutubePoller.DB.get_known_watch_ids()
         new_videos = Enum.reject(videos, fn v -> MapSet.member?(known_ids, v.video_id) end)
 
@@ -40,6 +41,10 @@ defmodule YoutubePoller.HistoryWorker do
           Logger.info("Seeding #{length(new_videos)} existing watch history entries (no notifications)")
           for video <- new_videos, do: YoutubePoller.DB.insert_known_watch(video.video_id)
           YoutubePoller.DB.mark_seeded!(@seed_key)
+
+          YoutubePoller.NatsClient.publish_debug(
+            "📺 Watch history seeded: #{length(new_videos)} videos recorded silently"
+          )
         else
           Logger.info("Found #{length(new_videos)} new watched videos")
 
@@ -53,6 +58,10 @@ defmodule YoutubePoller.HistoryWorker do
 
       {:error, reason} ->
         Logger.error("Watch history scrape failed: #{inspect(reason)}")
+
+        YoutubePoller.NatsClient.publish_debug(
+          "⚠️ Watch history scrape failed: #{inspect(reason)}"
+        )
     end
   end
 end

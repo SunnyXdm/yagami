@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -32,7 +33,6 @@ class TestClientRouting:
         """Verify the subject → chat_id mapping is correct."""
         cfg = make_config()
 
-        # These are the routes defined in client.py
         expected_routes = {
             "youtube.watch": cfg.chat_id_watch_history,
             "youtube.likes": cfg.chat_id_likes,
@@ -60,10 +60,6 @@ class TestMakeHandler:
     @pytest.mark.asyncio
     async def test_handler_parses_json_and_calls_handle_event(self):
         """Verify that the closure correctly captures subject and chat_id."""
-        from telegram_client.client import run  # We test the pattern, not run() itself
-
-        # The factory pattern is: make_handler(subject, chat_id) → async handler(msg)
-        # We test the concept by simulating what it does
         captured_subjects = []
         captured_chat_ids = []
 
@@ -74,7 +70,6 @@ class TestMakeHandler:
 
             return handler
 
-        # Simulate how the loop creates handlers
         routes = {
             "youtube.watch": -100333,
             "youtube.likes": -100111,
@@ -82,13 +77,41 @@ class TestMakeHandler:
 
         handlers = {subj: make_handler(subj, cid) for subj, cid in routes.items()}
 
-        # Call each handler
         mock_msg = MagicMock()
         mock_msg.data = json.dumps({"test": True}).encode()
 
         await handlers["youtube.watch"](mock_msg)
         await handlers["youtube.likes"](mock_msg)
 
-        # Each handler should have captured its own subject (not the last one)
         assert captured_subjects == ["youtube.watch", "youtube.likes"]
         assert captured_chat_ids == [-100333, -100111]
+
+
+class TestYouTubeUrlParsing:
+    """Test the YouTube URL regex used by the admin DM handler."""
+
+    # Same regex as in client.py — tested independently to avoid importing
+    # nats/telethon which aren't available in the local test environment.
+    YOUTUBE_RE = re.compile(
+        r"(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})"
+    )
+
+    def test_standard_url(self):
+        match = self.YOUTUBE_RE.search("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        assert match and match.group(1) == "dQw4w9WgXcQ"
+
+    def test_short_url(self):
+        match = self.YOUTUBE_RE.search("https://youtu.be/dQw4w9WgXcQ")
+        assert match and match.group(1) == "dQw4w9WgXcQ"
+
+    def test_shorts_url(self):
+        match = self.YOUTUBE_RE.search("https://youtube.com/shorts/abc12345678")
+        assert match and match.group(1) == "abc12345678"
+
+    def test_embedded_in_text(self):
+        match = self.YOUTUBE_RE.search("Check this out: https://youtu.be/xyzxyzxyz12 cool right?")
+        assert match and match.group(1) == "xyzxyzxyz12"
+
+    def test_no_match(self):
+        assert self.YOUTUBE_RE.search("hello world") is None
+        assert self.YOUTUBE_RE.search("https://google.com") is None
