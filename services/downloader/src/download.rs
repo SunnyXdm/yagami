@@ -58,7 +58,7 @@ pub async fn download_video(video_id: &str, url: &str, config: &Config) -> Resul
         "--no-playlist".to_string(),
         "--write-info-json".to_string(),
         "--js-runtimes".to_string(),
-        "nodejs".to_string(),
+        "node".to_string(),
     ];
 
     // Pass cookies directly — mounted read-write so yt-dlp can update rotated cookies
