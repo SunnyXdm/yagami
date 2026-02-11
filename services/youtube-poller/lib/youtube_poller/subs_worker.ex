@@ -18,18 +18,18 @@ defmodule YoutubePoller.SubsWorker do
   @impl true
   def init(:ok) do
     Process.send_after(self(), :poll, 8_000)
-    {:ok, %{}}
+    {:ok, %{skip_alerted: false}}
   end
 
   @impl true
   def handle_info(:poll, state) do
-    poll()
+    state = poll(state)
     interval = Application.get_env(:youtube_poller, :poll_interval_subs, 3_600_000)
     Process.send_after(self(), :poll, interval)
     {:noreply, state}
   end
 
-  defp poll do
+  defp poll(state) do
     Logger.info("Polling subscriptions...")
 
     with {:ok, token} <- YoutubePoller.OAuth.get_token(),
@@ -53,6 +53,8 @@ defmodule YoutubePoller.SubsWorker do
         YoutubePoller.NatsClient.publish_debug(
           "📋 Subscriptions seeded: #{length(subs)} channels recorded silently"
         )
+
+        state
       else
         new_ids = MapSet.difference(current_ids, known_ids)
         lost_ids = MapSet.difference(known_ids, current_ids)
@@ -64,9 +66,14 @@ defmodule YoutubePoller.SubsWorker do
         if total_changes > 10 do
           Logger.warning("Suspicious diff: #{MapSet.size(new_ids)} new, #{MapSet.size(lost_ids)} lost — skipping (likely API pagination issue)")
 
-          YoutubePoller.NatsClient.publish_debug(
-            "⚠️ Subscriptions: skipped poll — #{total_changes} changes detected, likely API pagination issue (#{length(subs)} fetched vs #{map_size(known)} known)"
-          )
+          # Only send debug message once to avoid spamming admin every poll cycle
+          unless state.skip_alerted do
+            YoutubePoller.NatsClient.publish_debug(
+              "⚠️ Subscriptions: large diff detected (#{total_changes} changes, #{length(subs)} fetched vs #{map_size(known)} known). Skipping — will keep skipping silently until diff stabilises."
+            )
+          end
+
+          %{state | skip_alerted: true}
         else
           # New subscriptions
           new_subs = Enum.filter(subs, fn s -> MapSet.member?(new_ids, s.channel_id) end)
@@ -88,6 +95,9 @@ defmodule YoutubePoller.SubsWorker do
           end
 
           Logger.info("Subs check: #{length(new_subs)} new, #{MapSet.size(lost_ids)} removed")
+
+          # Diff was within bounds — reset the skip alert flag
+          %{state | skip_alerted: false}
         end
       end
     else
@@ -97,6 +107,8 @@ defmodule YoutubePoller.SubsWorker do
         YoutubePoller.NatsClient.publish_debug(
           "⚠️ Subscriptions poll failed: #{inspect(reason)}"
         )
+
+        state
     end
   end
 end
