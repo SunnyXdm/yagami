@@ -50,7 +50,7 @@ services:
   youtube-poller:
     build: ./services/youtube-poller
     volumes:
-      - ./config/cookies.txt:/config/cookies.txt:ro
+      - ./config/cookies.txt:/config/cookies.txt
     environment:
       DATABASE_URL: postgres://yagami:${DB_PASSWORD}@postgres:5432/yagami
       NATS_URL: nats://nats:4222
@@ -70,12 +70,11 @@ services:
     build: ./services/downloader
     volumes:
       - downloads:/tmp/ytdl
-      - ./config/cookies.txt:/config/cookies.txt:ro
+      - ./config/cookies.txt:/config/cookies.txt
     environment:
       NATS_URL: nats://nats:4222
       DOWNLOAD_DIR: /tmp/ytdl
       MAX_CONCURRENT_DOWNLOADS: "2"
-      MAX_FILE_SIZE_MB: "2000"
       COOKIES_PATH: /config/cookies.txt
     depends_on:
       nats: { condition: service_started }

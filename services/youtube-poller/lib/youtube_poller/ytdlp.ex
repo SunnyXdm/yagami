@@ -28,22 +28,10 @@ defmodule YoutubePoller.Ytdlp do
   end
 
   defp run_scrape(cookies_path) do
-    # Copy cookies to a writable temp path (Docker mounts them read-only)
-    writable_cookies = "/tmp/cookies.txt"
-
-    case File.cp(cookies_path, writable_cookies) do
-      :ok ->
-        Logger.info("Cookies copied to writable path")
-
-      {:error, reason} ->
-        Logger.error("Could not copy cookies to writable path: #{inspect(reason)}")
-        return_error("Could not copy cookies: #{inspect(reason)}")
-    end
-
     args = [
       "--flat-playlist",
       "-j",
-      "--cookies", writable_cookies,
+      "--cookies", cookies_path,
       "--playlist-end", "50",
       "--js-runtimes", "nodejs",
       "https://www.youtube.com/feed/history"

@@ -38,23 +38,6 @@ struct YtdlpInfo {
     thumbnail: Option<String>,
 }
 
-/// Copy cookies to a writable temp path so yt-dlp can update them.
-/// The original file is mounted read-only in Docker.
-fn writable_cookies(source: &str) -> Option<String> {
-    let src = PathBuf::from(source);
-    if !src.exists() {
-        return None;
-    }
-    let dest = PathBuf::from("/tmp/cookies.txt");
-    match std::fs::copy(&src, &dest) {
-        Ok(_) => Some(dest.to_string_lossy().to_string()),
-        Err(e) => {
-            error!("Failed to copy cookies to writable path: {}", e);
-            None
-        }
-    }
-}
-
 /// Download a video using yt-dlp. Returns the file path and extracted metadata.
 ///
 /// LEARNING: `Result<DownloadOutput>` is short for `Result<DownloadOutput, anyhow::Error>`.
@@ -78,10 +61,11 @@ pub async fn download_video(video_id: &str, url: &str, config: &Config) -> Resul
         "nodejs".to_string(),
     ];
 
-    // Copy cookies to a writable temp path (Docker mounts them read-only)
-    if let Some(cookies) = writable_cookies(&config.cookies_path) {
+    // Pass cookies directly — mounted read-write so yt-dlp can update rotated cookies
+    let cookies_path = PathBuf::from(&config.cookies_path);
+    if cookies_path.exists() {
         args.push("--cookies".to_string());
-        args.push(cookies);
+        args.push(config.cookies_path.clone());
     }
 
     args.push(url.to_string());
