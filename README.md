@@ -89,7 +89,7 @@
 ## Quick Start
 
 ```bash
-git clone <repo-url> && cd yagami
+git clone https://github.com/SunnyXdm/yagami && cd yagami
 chmod +x scripts/setup.sh
 ./scripts/setup.sh
 ```
