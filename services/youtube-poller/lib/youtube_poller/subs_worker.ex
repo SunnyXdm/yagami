@@ -13,23 +13,27 @@ defmodule YoutubePoller.SubsWorker do
 
   @seed_key "seeded_subs"
 
+  # Backoff: 15 min → 30 min → 1 hr → 2 hr → 4 hr (max)
+  @initial_backoff_ms 15 * 60 * 1_000
+  @max_backoff_ms 4 * 60 * 60 * 1_000
+
   def start_link(_opts), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
 
   @impl true
   def init(:ok) do
     Process.send_after(self(), :poll, 8_000)
-    {:ok, %{skip_alerted: false}}
+    {:ok, %{skip_alerted: false, backoff_ms: 0, quota_alerted: false}}
   end
 
   @impl true
   def handle_info(:poll, state) do
-    state = poll(state)
-    interval = Application.get_env(:youtube_poller, :poll_interval_subs, 3_600_000)
-    Process.send_after(self(), :poll, interval)
+    {state, next_interval} = poll(state)
+    Process.send_after(self(), :poll, next_interval)
     {:noreply, state}
   end
 
   defp poll(state) do
+    interval = Application.get_env(:youtube_poller, :poll_interval_subs, 3_600_000)
     Logger.info("Polling subscriptions...")
 
     with {:ok, token} <- YoutubePoller.OAuth.get_token(),
@@ -54,7 +58,7 @@ defmodule YoutubePoller.SubsWorker do
           "📋 Subscriptions seeded: #{length(subs)} channels recorded silently"
         )
 
-        state
+        {state, interval}
       else
         new_ids = MapSet.difference(current_ids, known_ids)
         lost_ids = MapSet.difference(known_ids, current_ids)
@@ -66,29 +70,51 @@ defmodule YoutubePoller.SubsWorker do
         threshold = max(15, div(known_count * 3, 100))
         total_changes = MapSet.size(new_ids) + MapSet.size(lost_ids)
 
-        if total_changes > threshold do
-          Logger.warning("Large diff: #{MapSet.size(new_ids)} new, #{MapSet.size(lost_ids)} lost (threshold=#{threshold}) — re-fetching to confirm...")
+        updated_state =
+          if total_changes > threshold do
+            Logger.warning("Large diff: #{MapSet.size(new_ids)} new, #{MapSet.size(lost_ids)} lost (threshold=#{threshold}) — re-fetching to confirm...")
 
-          # Re-fetch subscriptions to confirm which changes are real
-          # (API pagination can return different subsets between calls)
-          case confirm_changes(token, known_ids, new_ids, lost_ids, subs) do
-            {:confirmed, confirmed_new, confirmed_lost, all_subs2} ->
-              process_changes(confirmed_new, confirmed_lost, all_subs2, known, state)
+            # Re-fetch subscriptions to confirm which changes are real
+            # (API pagination can return different subsets between calls)
+            case confirm_changes(token, known_ids, new_ids, lost_ids, subs) do
+              {:confirmed, confirmed_new, confirmed_lost, all_subs2} ->
+                process_changes(confirmed_new, confirmed_lost, all_subs2, known, state)
 
-            :skip ->
-              unless state.skip_alerted do
-                YoutubePoller.NatsClient.publish_debug(
-                  "⚠️ Subscriptions: large diff detected (#{total_changes} changes, #{length(subs)} fetched vs #{known_count} known). Re-fetch showed inconsistency — skipping."
-                )
-              end
+              :skip ->
+                unless state.skip_alerted do
+                  YoutubePoller.NatsClient.publish_debug(
+                    "⚠️ Subscriptions: large diff detected (#{total_changes} changes, #{length(subs)} fetched vs #{known_count} known). Re-fetch showed inconsistency — skipping."
+                  )
+                end
 
-              %{state | skip_alerted: true}
+                %{state | skip_alerted: true}
+            end
+          else
+            process_changes(new_ids, lost_ids, subs, known, state)
           end
-        else
-          process_changes(new_ids, lost_ids, subs, known, state)
+
+        # Success — reset backoff
+        if updated_state.backoff_ms > 0 do
+          Logger.info("Quota recovered — resuming normal subscription polling")
         end
+
+        {%{updated_state | backoff_ms: 0, quota_alerted: false}, interval}
       end
     else
+      {:error, :quota_exceeded} ->
+        backoff = next_backoff(state.backoff_ms)
+        backoff_min = div(backoff, 60_000)
+
+        Logger.warning("Quota exceeded — subs backing off for #{backoff_min} minutes")
+
+        unless state.quota_alerted do
+          YoutubePoller.NatsClient.publish_debug(
+            "⚠️ YouTube API quota exceeded. Subscription polling paused, backing off #{backoff_min} min. Quota resets at midnight Pacific Time."
+          )
+        end
+
+        {%{state | backoff_ms: backoff, quota_alerted: true}, backoff}
+
       {:error, reason} ->
         Logger.error("Failed to poll subscriptions: #{inspect(reason)}")
 
@@ -96,7 +122,7 @@ defmodule YoutubePoller.SubsWorker do
           "⚠️ Subscriptions poll failed: #{inspect(reason)}"
         )
 
-        state
+        {state, interval}
     end
   end
 
@@ -153,4 +179,7 @@ defmodule YoutubePoller.SubsWorker do
     # Diff was within bounds — reset the skip alert flag
     %{state | skip_alerted: false}
   end
+
+  defp next_backoff(0), do: @initial_backoff_ms
+  defp next_backoff(current), do: min(current * 2, @max_backoff_ms)
 end

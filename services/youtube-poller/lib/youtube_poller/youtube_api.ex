@@ -65,6 +65,15 @@ defmodule YoutubePoller.YoutubeApi do
           {:ok, all}
         end
 
+      {:ok, %{status: 403, body: body}} ->
+        if quota_exceeded?(body) do
+          Logger.error("YouTube API quota exceeded")
+          {:error, :quota_exceeded}
+        else
+          Logger.error("YouTube API 403: #{inspect(body)}")
+          {:error, "YouTube API HTTP 403"}
+        end
+
       {:ok, %{status: status, body: body}} ->
         Logger.error("YouTube API error: #{status} — #{inspect(body)}")
         {:error, "YouTube API HTTP #{status}"}
@@ -74,6 +83,12 @@ defmodule YoutubePoller.YoutubeApi do
         {:error, reason}
     end
   end
+
+  defp quota_exceeded?(%{"error" => %{"errors" => errors}}) when is_list(errors) do
+    Enum.any?(errors, fn e -> e["reason"] == "quotaExceeded" end)
+  end
+
+  defp quota_exceeded?(_), do: false
 
   defp parse_video(item) do
     snippet = item["snippet"]

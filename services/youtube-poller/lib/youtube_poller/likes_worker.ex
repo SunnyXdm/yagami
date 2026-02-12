@@ -6,6 +6,9 @@ defmodule YoutubePoller.LikesWorker do
   sending notifications or triggering downloads. Only truly new likes
   (detected after seeding) are published.
 
+  Includes exponential backoff when the YouTube API quota is exceeded.
+  Backoff starts at 15 minutes and doubles up to 4 hours max.
+
   LEARNING: GenServer periodic worker pattern — init schedules the first
   :poll via Process.send_after, then each handle_info reschedules the next.
   """
@@ -14,23 +17,27 @@ defmodule YoutubePoller.LikesWorker do
 
   @seed_key "seeded_likes"
 
+  # Backoff: 15 min → 30 min → 1 hr → 2 hr → 4 hr (max)
+  @initial_backoff_ms 15 * 60 * 1_000
+  @max_backoff_ms 4 * 60 * 60 * 1_000
+
   def start_link(_opts), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
 
   @impl true
   def init(:ok) do
     Process.send_after(self(), :poll, 5_000)
-    {:ok, %{}}
+    {:ok, %{backoff_ms: 0, quota_alerted: false}}
   end
 
   @impl true
   def handle_info(:poll, state) do
-    poll()
-    interval = Application.get_env(:youtube_poller, :poll_interval_likes, 300_000)
-    Process.send_after(self(), :poll, interval)
+    {state, next_interval} = poll(state)
+    Process.send_after(self(), :poll, next_interval)
     {:noreply, state}
   end
 
-  defp poll do
+  defp poll(state) do
+    interval = Application.get_env(:youtube_poller, :poll_interval_likes, 300_000)
     Logger.info("Polling liked videos...")
 
     with {:ok, token} <- YoutubePoller.OAuth.get_token(),
@@ -69,13 +76,39 @@ defmodule YoutubePoller.LikesWorker do
           Logger.info("New like: #{video.title}")
         end
       end
+
+      # Success — reset backoff
+      if state.backoff_ms > 0 do
+        Logger.info("Quota recovered — resuming normal polling")
+      end
+
+      {%{state | backoff_ms: 0, quota_alerted: false}, interval}
     else
+      {:error, :quota_exceeded} ->
+        backoff = next_backoff(state.backoff_ms)
+        backoff_min = div(backoff, 60_000)
+
+        Logger.warning("Quota exceeded — backing off for #{backoff_min} minutes")
+
+        unless state.quota_alerted do
+          YoutubePoller.NatsClient.publish_debug(
+            "⚠️ YouTube API quota exceeded. Likes polling paused, backing off #{backoff_min} min. Quota resets at midnight Pacific Time."
+          )
+        end
+
+        {%{state | backoff_ms: backoff, quota_alerted: true}, backoff}
+
       {:error, reason} ->
         Logger.error("Failed to poll likes: #{inspect(reason)}")
 
         YoutubePoller.NatsClient.publish_debug(
           "⚠️ Likes poll failed: #{inspect(reason)}"
         )
+
+        {state, interval}
     end
   end
+
+  defp next_backoff(0), do: @initial_backoff_ms
+  defp next_backoff(current), do: min(current * 2, @max_backoff_ms)
 end

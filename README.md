@@ -304,8 +304,8 @@ All configuration is via environment variables in `.env`:
 | `TELEGRAM_CHAT_ID_SUBSCRIPTIONS` | — | Channel for subscription changes |
 | `TELEGRAM_CHAT_ID_WATCH_HISTORY` | — | Channel for watch history |
 | `TELEGRAM_ADMIN_USER_ID` | — | Your Telegram user ID (for admin features) |
-| `POLL_INTERVAL_LIKES` | `120` | Seconds between like polls |
-| `POLL_INTERVAL_SUBS` | `600` | Seconds between subscription polls |
+| `POLL_INTERVAL_LIKES` | `300` | Seconds between like polls |
+| `POLL_INTERVAL_SUBS` | `1800` | Seconds between subscription polls |
 | `POLL_INTERVAL_HISTORY` | `300` | Seconds between history scrapes |
 | `MAX_CONCURRENT_DOWNLOADS` | `2` | Parallel yt-dlp downloads |
 
