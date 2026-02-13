@@ -50,7 +50,7 @@ pub async fn download_video(video_id: &str, url: &str, config: &Config) -> Resul
     // variables in Rust are immutable (like `val` in Kotlin or `let` in Swift).
     let mut args = vec![
         "-f".to_string(),
-        "bestvideo[height<=1080]+bestaudio/best[height<=1080]".to_string(),
+        "bestvideo+bestaudio/best".to_string(),
         "--merge-output-format".to_string(),
         "mp4".to_string(),
         "-o".to_string(),

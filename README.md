@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  Watches your YouTube activity — likes, subscriptions, watch history — and forwards<br>
+  Watches your YouTube activity — likes and watch history — and forwards<br>
   everything to Telegram channels in real-time. Downloads liked videos and uploads them via MTProto.
 </p>
 
@@ -29,11 +29,11 @@
 | | Feature | Description |
 |---|---|---|
 | 👍 | **Liked videos** | Detected instantly, downloaded via yt-dlp, uploaded to Telegram |
-| 📡 | **Subscriptions** | New/lost subscriptions detected via API diffing |
-| 🕐 | **Watch history** | Scraped via yt-dlp + cookies (not available via API) |
+| � | **Watch history** | Scraped via yt-dlp + cookies (not available via API) |
 | 💬 | **Admin DM downloads** | Send a YouTube link to the bot → it downloads and sends the video back |
 | ✂️ | **Large video splitting** | Videos >2 GB are automatically split into parts using ffmpeg |
-| 🖼️ | **HD thumbnails** | Uses maxres YouTube thumbnails (1280×720) with aspect-ratio-correct cropping |
+| 🖼️ | **HD thumbnails** | Full-resolution maxres YouTube thumbnails with aspect-ratio-correct cropping |
+| 🎬 | **Best quality video** | Downloads the highest available resolution (up to 4K/8K) |
 | 🐛 | **Debug messages** | Errors and status updates sent to admin via Telegram |
 | 📊 | **REST API** | Query events and stats via the Go API gateway |
 
@@ -45,8 +45,7 @@
 │    (Elixir)      │     │  Message Queue   │     │    (Python)     │
 │                  │     │                  │     │   via MTProto   │
 │  • Liked videos  │     │  Subjects:       │     │                 │
-│  • Subscriptions │     │  youtube.likes   │     │  → Likes Channel│
-│  • Watch history │     │  youtube.subs    │     │  → Subs Channel │
+│  • Watch history │     │  youtube.likes   │     │  → Likes Channel│
 └──────┬───────────┘     │  youtube.watch   │     │  → History Chan │
        │                 │  download.req    │     └─────────────────┘
        │                 │  download.done   │              ▲
@@ -108,7 +107,7 @@ The interactive setup wizard handles everything:
 
 ### Step 1 — Google Cloud OAuth Credentials
 
-You need a Google OAuth client so Yagami can read your YouTube likes and subscriptions.
+You need a Google OAuth client so Yagami can read your YouTube likes.
 
 <details>
 <summary><strong>📋 Click to expand full Google OAuth setup guide</strong></summary>
@@ -212,16 +211,15 @@ The output is a long base64 string — it goes into `.env` as `TELEGRAM_SESSION_
 
 ### Step 3 — Telegram Channels
 
-Create 3 Telegram channels (or groups) where Yagami will post notifications.
+Create 2 Telegram channels (or groups) where Yagami will post notifications.
 
 <details>
 <summary><strong>📋 Click to expand Telegram channel setup guide</strong></summary>
 
 #### 3.1 Create Channels
 
-In Telegram, create 3 channels:
+In Telegram, create 2 channels:
 - **Yagami Likes** — for liked video notifications
-- **Yagami Subs** — for subscription changes
 - **Yagami History** — for watch history
 
 #### 3.2 Get Channel IDs
@@ -232,7 +230,7 @@ In Telegram, create 3 channels:
 
 #### 3.3 Make Your Account an Admin
 
-Make sure the Telegram account you used to generate the session string is an **admin** of all 3 channels (with permission to post messages).
+Make sure the Telegram account you used to generate the session string is an **admin** of both channels (with permission to post messages).
 
 #### 3.4 Get Your Admin User ID
 
@@ -242,7 +240,6 @@ Send any message to **[@userinfobot](https://t.me/userinfobot)** directly (not f
 
 ```env
 TELEGRAM_CHAT_ID_LIKES=-1001234567890
-TELEGRAM_CHAT_ID_SUBSCRIPTIONS=-1001234567891
 TELEGRAM_CHAT_ID_WATCH_HISTORY=-1001234567892
 TELEGRAM_ADMIN_USER_ID=123456789
 ```
@@ -301,11 +298,9 @@ All configuration is via environment variables in `.env`:
 | `TELEGRAM_API_HASH` | — | Telegram API Hash |
 | `TELEGRAM_SESSION_STRING` | — | *Auto-filled by setup wizard* |
 | `TELEGRAM_CHAT_ID_LIKES` | — | Channel for liked videos |
-| `TELEGRAM_CHAT_ID_SUBSCRIPTIONS` | — | Channel for subscription changes |
 | `TELEGRAM_CHAT_ID_WATCH_HISTORY` | — | Channel for watch history |
 | `TELEGRAM_ADMIN_USER_ID` | — | Your Telegram user ID (for admin features) |
 | `POLL_INTERVAL_LIKES` | `300` | Seconds between like polls |
-| `POLL_INTERVAL_SUBS` | `1800` | Seconds between subscription polls |
 | `POLL_INTERVAL_HISTORY` | `300` | Seconds between history scrapes |
 | `MAX_CONCURRENT_DOWNLOADS` | `2` | Parallel yt-dlp downloads |
 
@@ -329,14 +324,13 @@ The Go API gateway runs on port **8080**.
   }
 ]
 ```
-Query params: `type` (like / subscription / watch), `limit` (default 50)
+Query params: `type` (like / watch), `limit` (default 50)
 
 ### `GET /api/stats`
 ```json
 {
-  "total_events": 142,
+  "total_events": 127,
   "likes": 89,
-  "subscriptions": 15,
   "watches": 38
 }
 ```
@@ -345,7 +339,7 @@ Query params: `type` (like / subscription / watch), `limit` (default 50)
 
 ```
 yagami/
-├── docker-compose.yml              # All services + infrastructure
+├── compose.yml                      # All services + infrastructure
 ├── .env.example                    # Configuration template
 ├── db/init.sql                     # Database schema
 ├── config/cookies.txt              # YouTube cookies (gitignored)
@@ -364,7 +358,6 @@ yagami/
 │   │   ├── lib/youtube_poller/
 │   │   │   ├── application.ex      # OTP supervision tree
 │   │   │   ├── likes_worker.ex     # Polls liked videos
-│   │   │   ├── subs_worker.ex      # Polls subscriptions
 │   │   │   ├── history_worker.ex   # Scrapes watch history
 │   │   │   ├── youtube_api.ex      # YouTube API client
 │   │   │   ├── ytdlp.ex            # yt-dlp wrapper
@@ -431,15 +424,6 @@ Choose option to run OAuth setup when prompted.
   yt-dlp --flat-playlist -j --cookies config/cookies.txt \
     "https://www.youtube.com/feed/history" | head -1
   ```
-
-</details>
-
-<details>
-<summary><strong>Subscriptions showing false changes</strong></summary>
-
-- Partial API responses (pagination errors) are detected and skipped
-- If >10 changes are detected in one poll, it's treated as suspicious and ignored
-- Debug logs are sent to the admin for visibility
 
 </details>
 

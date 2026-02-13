@@ -5,7 +5,6 @@ import pytest
 from telegram_client.formatter import (
     format_duration,
     format_like,
-    format_subscription,
     format_video_caption,
     format_views,
     format_watch,
@@ -119,34 +118,6 @@ class TestFormatLike:
         result = format_like({})
         assert "`Liked`" in result
         assert "Unknown" in result
-
-
-# ── format_subscription ─────────────────────────────────────
-
-
-class TestFormatSubscription:
-    def test_new_subscription(self):
-        data = {
-            "channel_title": "Science Channel",
-            "channel_id": "UC123",
-        }
-        result = format_subscription(data)
-        assert "`Subscribed to`" in result
-        assert "Science Channel" in result
-        assert "youtube.com/channel/UC123" in result
-
-    def test_unsubscription(self):
-        data = {
-            "action": "unsubscribed",
-            "channel_title": "Old Channel",
-        }
-        result = format_subscription(data)
-        assert "`Unsubscribed from`" in result
-        assert "Old Channel" in result
-
-    def test_empty_data_defaults_to_subscribe(self):
-        result = format_subscription({})
-        assert "`Subscribed to`" in result
 
 
 # ── format_video_caption ─────────────────────────────────────

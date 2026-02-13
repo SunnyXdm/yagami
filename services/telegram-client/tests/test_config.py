@@ -17,7 +17,6 @@ class TestConfig:
         monkeypatch.setenv("TELEGRAM_API_HASH", "abc123hash")
         monkeypatch.setenv("TELEGRAM_SESSION_STRING", "session_data")
         monkeypatch.setenv("TELEGRAM_CHAT_ID_LIKES", "-100111")
-        monkeypatch.setenv("TELEGRAM_CHAT_ID_SUBSCRIPTIONS", "-100222")
         monkeypatch.setenv("TELEGRAM_CHAT_ID_WATCH_HISTORY", "-100333")
         monkeypatch.setenv("TELEGRAM_ADMIN_USER_ID", "999")
         monkeypatch.setenv("NATS_URL", "nats://test:4222")
@@ -29,7 +28,6 @@ class TestConfig:
         assert cfg.api_hash == "abc123hash"
         assert cfg.session_string == "session_data"
         assert cfg.chat_id_likes == -100111
-        assert cfg.chat_id_subscriptions == -100222
         assert cfg.chat_id_watch_history == -100333
         assert cfg.admin_user_id == 999
         assert cfg.nats_url == "nats://test:4222"

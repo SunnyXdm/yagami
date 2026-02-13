@@ -5,4 +5,4 @@
 #   - "cookies.txt" (Firefox)
 #
 # The file must be in Netscape cookie format.
-# Mount it read-only in Docker — see docker-compose.yml.
+# Mount it read-only in Docker — see compose.yml.

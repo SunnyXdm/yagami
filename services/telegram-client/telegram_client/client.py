@@ -45,7 +45,6 @@ async def run() -> None:
     # Pre-resolve all chat entities so Telethon can send by numeric ID.
     chat_ids = {
         config.chat_id_likes,
-        config.chat_id_subscriptions,
         config.chat_id_watch_history,
         config.admin_user_id,
     }
@@ -65,7 +64,6 @@ async def run() -> None:
     routes = {
         "youtube.watch":         config.chat_id_watch_history,
         "youtube.likes":         config.chat_id_likes,
-        "youtube.subscriptions": config.chat_id_subscriptions,
         "download.complete":     config.chat_id_likes,
         "system.health":         config.admin_user_id,
     }

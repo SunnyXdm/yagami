@@ -10,5 +10,4 @@ config :youtube_poller,
   google_refresh_token: System.get_env("GOOGLE_REFRESH_TOKEN"),
   cookies_path: System.get_env("COOKIES_PATH", "/app/cookies.txt"),
   poll_interval_likes: String.to_integer(System.get_env("POLL_INTERVAL_LIKES", "300")) * 1000,
-  poll_interval_subs: String.to_integer(System.get_env("POLL_INTERVAL_SUBS", "3600")) * 1000,
   poll_interval_history: String.to_integer(System.get_env("POLL_INTERVAL_HISTORY", "600")) * 1000

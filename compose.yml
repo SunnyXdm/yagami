@@ -1,5 +1,5 @@
 # ============================================================
-#  Project Yagami — Docker Compose
+#  Project Yagami — Compose
 #  Start everything: docker compose up -d
 # ============================================================
 
@@ -59,7 +59,6 @@ services:
       GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN}
       COOKIES_PATH: /config/cookies.txt
       POLL_INTERVAL_LIKES: "300"
-      POLL_INTERVAL_SUBS: "1800"
       POLL_INTERVAL_HISTORY: "300"
     depends_on:
       postgres: { condition: service_healthy }
@@ -92,7 +91,6 @@ services:
       TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
       TELEGRAM_SESSION_STRING: ${TELEGRAM_SESSION_STRING}
       TELEGRAM_CHAT_ID_LIKES: ${TELEGRAM_CHAT_ID_LIKES}
-      TELEGRAM_CHAT_ID_SUBSCRIPTIONS: ${TELEGRAM_CHAT_ID_SUBSCRIPTIONS}
       TELEGRAM_CHAT_ID_WATCH_HISTORY: ${TELEGRAM_CHAT_ID_WATCH_HISTORY}
       TELEGRAM_ADMIN_USER_ID: ${TELEGRAM_ADMIN_USER_ID}
     depends_on:

@@ -114,49 +114,6 @@ class TestLikeWorkflow:
         await nc.close()
 
 
-class TestSubscriptionWorkflow:
-    """Simulates: User subscribes → poller detects → NATS → Telegram notification."""
-
-    @pytest.mark.asyncio
-    async def test_subscribe_and_unsubscribe(self):
-        nc = await nats.connect(NATS_URL)
-        received = []
-
-        async def handler(msg):
-            received.append(json.loads(msg.data.decode()))
-
-        await nc.subscribe("youtube.subscriptions", cb=handler)
-
-        # New subscription
-        await nc.publish(
-            "youtube.subscriptions",
-            json.dumps({
-                "channel_id": "UC_wf_sub",
-                "channel_title": "New Channel",
-                "action": "subscribed",
-            }).encode(),
-        )
-
-        # Unsubscription
-        await nc.publish(
-            "youtube.subscriptions",
-            json.dumps({
-                "channel_id": "UC_wf_sub",
-                "action": "unsubscribed",
-            }).encode(),
-        )
-
-        await nc.flush()
-        await asyncio.sleep(0.5)
-
-        assert len(received) == 2
-        assert received[0]["action"] == "subscribed"
-        assert received[1]["action"] == "unsubscribed"
-        assert received[0]["channel_id"] == received[1]["channel_id"]
-
-        await nc.close()
-
-
 class TestWatchHistoryWorkflow:
     """Simulates: Watch history scraped → NATS → Telegram notification."""
 
@@ -248,11 +205,6 @@ class TestDataIntegrity:
             "video_id": "abc123",
         }
         assert "video_id" in watch
-
-    def test_subscription_event_schema_matches_formatter(self):
-        """format_subscription() reads 'event' and 'channel_title'."""
-        sub = {"event": "subscribe", "channel_title": "Ch", "channel_id": "UC1"}
-        assert sub["event"] in ("subscribe", "unsubscribe")
 
     def test_download_result_schema_matches_handler(self):
         """handlers.py reads 'status', 'file_path', 'video_id' from download.complete."""

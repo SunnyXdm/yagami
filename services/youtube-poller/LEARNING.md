@@ -9,7 +9,6 @@ Application (supervisor)
 ├── Postgrex (DB connection pool)
 ├── NatsClient (GenServer)
 ├── LikesWorker (GenServer)
-├── SubsWorker (GenServer)
 └── HistoryWorker (GenServer)
 ```
 
@@ -128,10 +127,8 @@ new = Enum.reject(current, fn v -> MapSet.member?(known_ids, v.video_id) end)
 
 ### Tagged Tuple Error Handling
 API functions return `{:ok, data}` or `{:error, reason}` — never partial
-results. `fetch_all_pages` used to silently return whatever it had
-accumulated when a page request failed, causing the subscription worker
-to see incomplete lists and report false unsubscriptions. Now it returns
-`{:error, reason}` on any failure so callers can skip the cycle.
+results. `fetch_all_pages` returns `{:error, reason}` on any failure so
+callers can skip the cycle cleanly.
 
 ### Debug Messaging via NATS
 Workers publish admin-facing debug messages to `system.health`:
@@ -141,11 +138,10 @@ NatsClient.publish_debug("⚠️ History scrape failed: #{reason}")
 The telegram-client forwards these to the admin's DM. This replaces
 staring at logs.
 
-### Threshold Protection (Subscriptions)
-If a single poll cycle detects >10 subscription changes, it's almost
-certainly caused by an API pagination hiccup — not real activity. The
-worker skips the cycle and notifies the admin instead of spamming the
-channel.
+### Exponential Backoff on Quota Exceeded
+When the YouTube API returns HTTP 403 with `quotaExceeded`, the workers
+back off exponentially: 15 min → 30 min → 1 hr → 2 hr → 4 hr max. The
+admin gets a single notification per backoff incident.
 
 ## Common Gotchas
 

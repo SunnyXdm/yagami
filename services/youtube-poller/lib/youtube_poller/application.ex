@@ -28,7 +28,6 @@ defmodule YoutubePoller.Application do
 
       # 4. Polling workers (start after DB + NATS are ready)
       YoutubePoller.LikesWorker,
-      YoutubePoller.SubsWorker,
       YoutubePoller.HistoryWorker
     ]
 

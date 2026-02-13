@@ -16,7 +16,6 @@ def make_config(**overrides) -> Config:
         api_hash="hash",
         session_string="session",
         chat_id_likes=-100111,
-        chat_id_subscriptions=-100222,
         chat_id_watch_history=-100333,
         admin_user_id=0,
         nats_url="nats://localhost:4222",
@@ -36,22 +35,20 @@ class TestClientRouting:
         expected_routes = {
             "youtube.watch": cfg.chat_id_watch_history,
             "youtube.likes": cfg.chat_id_likes,
-            "youtube.subscriptions": cfg.chat_id_subscriptions,
             "download.complete": cfg.chat_id_likes,
             "system.health": cfg.admin_user_id,
         }
 
         assert expected_routes["youtube.watch"] == -100333
         assert expected_routes["youtube.likes"] == -100111
-        assert expected_routes["youtube.subscriptions"] == -100222
         assert expected_routes["download.complete"] == -100111
         assert expected_routes["system.health"] == cfg.admin_user_id
 
     def test_all_chat_ids_are_distinct_channels(self):
-        """Likes, subs, and history should go to different channels."""
+        """Likes and history should go to different channels."""
         cfg = make_config()
-        ids = {cfg.chat_id_likes, cfg.chat_id_subscriptions, cfg.chat_id_watch_history}
-        assert len(ids) == 3, "Each event type should have its own Telegram channel"
+        ids = {cfg.chat_id_likes, cfg.chat_id_watch_history}
+        assert len(ids) == 2, "Each event type should have its own Telegram channel"
 
 
 class TestMakeHandler:

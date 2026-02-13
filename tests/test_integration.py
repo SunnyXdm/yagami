@@ -73,7 +73,6 @@ class TestNATSConnectivity:
         subjects = [
             "youtube.watch",
             "youtube.likes",
-            "youtube.subscriptions",
             "download.request",
             "download.complete",
         ]

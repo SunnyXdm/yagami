@@ -49,24 +49,6 @@ defmodule YoutubePoller.DB do
     query("INSERT INTO known_likes (video_id) VALUES ($1) ON CONFLICT DO NOTHING", [video_id])
   end
 
-  # --- Known subscriptions ---
-
-  def get_known_subscriptions do
-    {:ok, %{rows: rows}} = query("SELECT channel_id, channel_title FROM known_subscriptions", [])
-    Map.new(rows, fn [id, title] -> {id, title} end)
-  end
-
-  def insert_known_subscription(channel_id, channel_title) do
-    query(
-      "INSERT INTO known_subscriptions (channel_id, channel_title) VALUES ($1, $2) ON CONFLICT (channel_id) DO UPDATE SET channel_title = $2",
-      [channel_id, channel_title]
-    )
-  end
-
-  def remove_known_subscription(channel_id) do
-    query("DELETE FROM known_subscriptions WHERE channel_id = $1", [channel_id])
-  end
-
   # --- Known watch history ---
 
   def get_known_watch_ids do

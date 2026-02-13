@@ -21,7 +21,6 @@ class Config:
 
     # One channel per event type
     chat_id_likes: int
-    chat_id_subscriptions: int
     chat_id_watch_history: int
     admin_user_id: int
 
@@ -36,7 +35,6 @@ class Config:
             api_hash=os.environ["TELEGRAM_API_HASH"],
             session_string=os.environ.get("TELEGRAM_SESSION_STRING", ""),
             chat_id_likes=int(os.environ["TELEGRAM_CHAT_ID_LIKES"]),
-            chat_id_subscriptions=int(os.environ["TELEGRAM_CHAT_ID_SUBSCRIPTIONS"]),
             chat_id_watch_history=int(os.environ["TELEGRAM_CHAT_ID_WATCH_HISTORY"]),
             admin_user_id=int(os.environ.get("TELEGRAM_ADMIN_USER_ID", "0")),
             nats_url=os.environ.get("NATS_URL", "nats://localhost:4222"),

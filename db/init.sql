@@ -6,7 +6,7 @@
 -- Immutable event log — every detected activity is appended here.
 CREATE TABLE IF NOT EXISTS events (
     id               BIGSERIAL PRIMARY KEY,
-    event_type       VARCHAR(50)  NOT NULL,   -- watch | like | unlike | subscribe | unsubscribe
+    event_type       VARCHAR(50)  NOT NULL,   -- watch | like
     video_id         VARCHAR(20),
     channel_id       VARCHAR(30),
     title            TEXT,
@@ -37,12 +37,6 @@ CREATE TABLE IF NOT EXISTS known_likes (
     channel_title    TEXT,
     liked_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     download_status  VARCHAR(20) DEFAULT 'pending'  -- pending | downloading | uploaded | failed
-);
-
-CREATE TABLE IF NOT EXISTS known_subscriptions (
-    channel_id       VARCHAR(30) PRIMARY KEY,
-    channel_title    TEXT,
-    subscribed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ── Download tracking ──────────────────────────────────────

@@ -27,7 +27,6 @@ def make_config(**overrides) -> Config:
         api_hash="hash",
         session_string="",
         chat_id_likes=-100111,
-        chat_id_subscriptions=-100222,
         chat_id_watch_history=-100333,
         admin_user_id=0,
         nats_url="nats://localhost:4222",
@@ -71,14 +70,6 @@ class TestHandleEvent:
         mock_tg.send_message.assert_called_once()
         msg = mock_tg.send_message.call_args[0][1]
         assert "`Liked`" in msg
-
-    @pytest.mark.asyncio
-    async def test_subscription_event(self, mock_tg, config):
-        data = {"channel_title": "New Channel", "channel_id": "UC999"}
-        await handle_event(mock_tg, "youtube.subscriptions", -100222, data, config)
-        mock_tg.send_message.assert_called_once()
-        msg = mock_tg.send_message.call_args[0][1]
-        assert "`Subscribed to`" in msg
 
     @pytest.mark.asyncio
     async def test_download_complete_routes_correctly(self, mock_tg, config):

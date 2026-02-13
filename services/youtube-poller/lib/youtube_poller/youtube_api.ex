@@ -1,6 +1,6 @@
 defmodule YoutubePoller.YoutubeApi do
   @moduledoc """
-  YouTube Data API v3 client — fetches liked videos and subscriptions.
+  YouTube Data API v3 client — fetches liked videos.
 
   LEARNING: Elixir's |> (pipe) operator chains function calls left-to-right.
   Instead of: Enum.map(Enum.filter(list, &f/1), &g/1)
@@ -19,19 +19,6 @@ defmodule YoutubePoller.YoutubeApi do
       maxResults: 50
     }, token) do
       {:ok, items} -> {:ok, Enum.map(items, &parse_video/1)}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  @doc "Fetch all subscriptions (auto-paginates). Returns {:ok, list} or {:error, reason}."
-  def list_subscriptions(token) do
-    case fetch_all_pages("#{@base_url}/subscriptions", %{
-      part: "snippet",
-      mine: true,
-      maxResults: 50,
-      order: "alphabetical"
-    }, token) do
-      {:ok, items} -> {:ok, Enum.map(items, &parse_subscription/1)}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -102,18 +89,6 @@ defmodule YoutubePoller.YoutubeApi do
       thumbnail: best_thumbnail(snippet),
       duration: parse_duration(content["duration"]),
       published_at: snippet["publishedAt"]
-    }
-  end
-
-  defp parse_subscription(item) do
-    snippet = item["snippet"]
-    resource = snippet["resourceId"]
-
-    %{
-      channel_id: resource["channelId"],
-      channel_title: snippet["title"],
-      thumbnail: best_thumbnail(snippet),
-      subscribed_at: snippet["publishedAt"]
     }
   end
 

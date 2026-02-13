@@ -56,18 +56,6 @@ def format_like(data: dict) -> str:
     )
 
 
-def format_subscription(data: dict) -> str:
-    action = data.get("action", "subscribed")
-    channel = _channel(data)
-    channel_id = data.get('channel_id', '')
-    
-    if action == "unsubscribed":
-        return f"`Unsubscribed from` {channel}"
-    
-    # Include raw URL on separate line for Telegram to generate link preview
-    return f"`Subscribed to` {channel}\n\nhttps://youtube.com/channel/{channel_id}"
-
-
 def format_video_caption(data: dict, part: int | None = None, total: int | None = None) -> str:
     duration = data.get("duration") or format_duration(data.get("duration_seconds"))
     title = data.get("title", "Video")

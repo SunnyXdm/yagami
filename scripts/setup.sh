@@ -37,10 +37,10 @@ missing=()
 command -v docker >/dev/null 2>&1 || missing+=("docker")
 if command -v "docker compose" >/dev/null 2>&1 || docker compose version >/dev/null 2>&1; then
     COMPOSE="docker compose"
-elif command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE="docker-compose"
+elif command -v docker compose >/dev/null 2>&1; then
+    COMPOSE="docker compose"
 else
-    missing+=("docker-compose")
+    missing+=("docker compose")
 fi
 
 if [ ${#missing[@]} -gt 0 ]; then
@@ -241,14 +241,13 @@ fi
 header "Step 4: Telegram Channels"
 
 chat_likes=$(get_env TELEGRAM_CHAT_ID_LIKES)
-chat_subs=$(get_env TELEGRAM_CHAT_ID_SUBSCRIPTIONS)
 chat_history=$(get_env TELEGRAM_CHAT_ID_WATCH_HISTORY)
 admin_id=$(get_env TELEGRAM_ADMIN_USER_ID)
 
 if [ -n "$chat_likes" ] && [ "$chat_likes" != "-1001234567890" ]; then
     check "Channel IDs already configured"
 else
-    echo "  Create 3 Telegram channels and get their chat IDs."
+    echo "  Create 2 Telegram channels and get their chat IDs."
     echo ""
     info "How to get a channel's chat ID:"
     echo "  1. Create a channel in Telegram"
@@ -260,12 +259,10 @@ else
     echo ""
 
     read -p "  Enter Likes channel ID (e.g., -1001234567890): " chat_likes
-    read -p "  Enter Subscriptions channel ID: " chat_subs
     read -p "  Enter Watch History channel ID: " chat_history
     read -p "  Enter your Telegram user ID (admin): " admin_id
 
     [ -n "$chat_likes" ]   && set_env "TELEGRAM_CHAT_ID_LIKES" "$chat_likes"
-    [ -n "$chat_subs" ]    && set_env "TELEGRAM_CHAT_ID_SUBSCRIPTIONS" "$chat_subs"
     [ -n "$chat_history" ] && set_env "TELEGRAM_CHAT_ID_WATCH_HISTORY" "$chat_history"
     [ -n "$admin_id" ]     && set_env "TELEGRAM_ADMIN_USER_ID" "$admin_id"
 
@@ -313,7 +310,6 @@ show_status "TELEGRAM_API_ID"                "12345678"
 show_status "TELEGRAM_API_HASH"              "0123456789abcdef0123456789abcdef"
 show_status "TELEGRAM_SESSION_STRING"         ""
 show_status "TELEGRAM_CHAT_ID_LIKES"         "-1001234567890"
-show_status "TELEGRAM_CHAT_ID_SUBSCRIPTIONS" "-1001234567891"
 show_status "TELEGRAM_CHAT_ID_WATCH_HISTORY" "-1001234567892"
 show_status "TELEGRAM_ADMIN_USER_ID"         "123456789"
 show_status "DB_PASSWORD"                    "changeme_use_a_strong_random_password"

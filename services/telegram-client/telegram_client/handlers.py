@@ -22,7 +22,6 @@ from telethon.tl.types import DocumentAttributeVideo, DocumentAttributeFilename
 from .config import Config
 from .formatter import (
     format_like,
-    format_subscription,
     format_video_caption,
     format_watch,
 )
@@ -51,11 +50,6 @@ async def handle_event(
         text = format_like(data)
         await tg.send_message(chat_id, text, link_preview=True)
         log.info("Sent like notification: %s", data.get("title"))
-
-    elif subject == "youtube.subscriptions":
-        text = format_subscription(data)
-        await tg.send_message(chat_id, text, link_preview=True)
-        log.info("Sent subscription notification: %s", data.get("channel_title"))
 
     elif subject == "download.complete":
         await handle_download_complete(tg, chat_id, data)
@@ -157,16 +151,16 @@ async def handle_download_complete(
 
 
 def prepare_thumbnail(thumbnail_url: str | None, video_path: str | None = None) -> str | None:
-    """Download a thumbnail and resize it to match the video's aspect ratio.
+    """Download a YouTube thumbnail at full resolution.
 
     Telegram uses the thumbnail to render the video preview card. If the
     thumbnail ratio doesn't match the video, the preview looks distorted.
 
     Steps:
       1. Get the video's width/height via ffprobe
-      2. Download the YouTube thumbnail
-      3. Center-crop the thumbnail to the video's aspect ratio
-      4. Resize to fit within 320×320 (Telegram's limit)
+      2. Download the YouTube maxres thumbnail (1280x720)
+      3. Center-crop to match the video's exact aspect ratio
+      4. Save at maximum JPEG quality (no downscale, no compression artifacts)
     """
     if not thumbnail_url:
         return None
@@ -184,11 +178,13 @@ def prepare_thumbnail(thumbnail_url: str | None, video_path: str | None = None) 
             if video_w and video_h:
                 img = _crop_to_ratio(img, video_w, video_h)
 
-            # Scale down to fit Telegram's 320px per-side limit
-            img.thumbnail((320, 320), Image.LANCZOS)
-            img.save(tmp, "JPEG", quality=95)
+            # Save at original resolution — Telegram handles its own resizing.
+            # No downscale; keep the full quality maxres thumbnail (1280x720).
+            out_w, out_h = img.size
+            img.save(tmp, "JPEG", quality=100, subsampling=0)
 
-        log.info("Prepared thumbnail (%dx%d ratio) from %s", video_w or 0, video_h or 0, thumbnail_url)
+        log.info("Prepared thumbnail (%dx%d, video %dx%d) from %s",
+                 out_w, out_h, video_w or 0, video_h or 0, thumbnail_url)
         return tmp
     except Exception as e:
         log.warning("Failed to prepare thumbnail: %s", e)
