@@ -122,6 +122,7 @@ defmodule YoutubePoller.YoutubeApi do
   # standard (640x480), maxres (1280x720). Not all are always present.
   defp best_thumbnail(snippet) do
     thumbs = snippet["thumbnails"] || %{}
+    Logger.debug("Thumbnails available: #{inspect(Map.keys(thumbs))}")
 
     (get_in(thumbs, ["maxres", "url"]) ||
        get_in(thumbs, ["standard", "url"]) ||
