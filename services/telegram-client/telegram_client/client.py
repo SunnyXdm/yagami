@@ -122,7 +122,7 @@ async def run() -> None:
         async def handler(msg):
             try:
                 data = json.loads(msg.data.decode())
-                await handle_event(tg, subject, chat_id, data, config)
+                await handle_event(tg, subject, chat_id, data, config, nc)
                 state["events_handled"] += 1
             except Exception:
                 log.exception("Error handling %s", subject)

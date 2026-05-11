@@ -16,7 +16,7 @@ func RunEventFanout(ctx context.Context, js jetstream.JetStream, bus *Bus) {
 		subject string
 	}{
 		{"YOUTUBE", "api-gateway-fanout-youtube", "youtube.>"},
-		{"DOWNLOADS", "api-gateway-fanout-downloads", "download.complete"},
+		{"DOWNLOADS", "api-gateway-fanout-downloads", "download.>"},
 		{"SYSTEM", "api-gateway-fanout-system", "system.heartbeat"},
 		{"LOGS", "api-gateway-fanout-logs", "logs.>"},
 	} {

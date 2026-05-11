@@ -10,12 +10,14 @@ LEARNING (Python):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import math
 import os
 import subprocess
 import tempfile
+import time
 import urllib.request
 from typing import Any
 
@@ -56,6 +58,7 @@ async def handle_event(
     chat_id: int,
     data: dict,
     config: Config,
+    nc: Any | None = None,
 ) -> None:
     """Route a NATS message to the right handler and Telegram channel."""
 
@@ -80,7 +83,7 @@ async def handle_event(
         log.info("Sent unsubscribe notification: %s", data.get("channel_title") or data.get("channel_id"))
 
     elif subject == "download.complete":
-        await handle_download_complete(tg, chat_id, data)
+        await handle_download_complete(tg, chat_id, data, config, nc)
 
     elif subject == "system.health":
         text = data.get("message", "Health check received")
@@ -89,7 +92,11 @@ async def handle_event(
 
 
 async def handle_download_complete(
-    tg: TelegramClient, chat_id: int, data: dict
+    tg: TelegramClient,
+    chat_id: int,
+    data: dict,
+    config: Config | None = None,
+    nc: Any | None = None,
 ) -> None:
     """Upload a downloaded video file to Telegram via MTProto.
 
@@ -124,6 +131,14 @@ async def handle_download_complete(
     file_size_mb = file_size / (1024 * 1024)
     log.info("Uploading %s (%.1f MB) to Telegram...", video_id, file_size_mb)
 
+    if config is not None:
+        await _update_download_status(
+            config,
+            video_id,
+            "uploading",
+            telegram_chat_id=int(target_chat),
+        )
+
     # Prepare high-quality thumbnail matching the video's aspect ratio
     thumb_path = prepare_thumbnail(data.get("thumbnail"), file_path)
 
@@ -136,18 +151,29 @@ async def handle_download_complete(
 
     upload_succeeded = False
     part_paths: list[str] = []
+    total_upload_parts = 1
+    last_message_id: int | None = None
     try:
         if file_size <= MAX_UPLOAD_BYTES:
             # Single file upload
             caption = format_video_caption(data)
-            await tg.send_file(
+            message = await tg.send_file(
                 entity=target_chat,
                 file=file_path,
                 caption=caption,
                 supports_streaming=True,
                 thumb=thumb_path,
                 attributes=video_attrs,
+                progress_callback=_make_upload_progress_callback(
+                    video_id,
+                    nc,
+                    bytes_before_part=0,
+                    total_bytes=file_size,
+                    part=1,
+                    total_parts=1,
+                ),
             )
+            last_message_id = getattr(message, "id", None)
             log.info("Uploaded %s to Telegram successfully", video_id)
             upload_succeeded = True
         else:
@@ -155,6 +181,9 @@ async def handle_download_complete(
             parts = split_video(file_path)
             part_paths = list(parts)
             total = len(parts)
+            total_upload_parts = total
+            total_bytes = sum(os.path.getsize(part_path) for part_path in parts)
+            bytes_before_part = 0
             log.info("File too large (%.1f MB), split into %d parts", file_size_mb, total)
 
             for i, part_path in enumerate(parts, 1):
@@ -162,14 +191,25 @@ async def handle_download_complete(
                 part_w, part_h = _get_video_dimensions(part_path)
                 part_dur = _get_video_duration(part_path)
                 part_attrs = _make_video_attributes(video_id, part_w or video_w, part_h or video_h, part_dur)
-                await tg.send_file(
+                part_size = os.path.getsize(part_path)
+                message = await tg.send_file(
                     entity=target_chat,
                     file=part_path,
                     caption=caption,
                     supports_streaming=True,
                     thumb=thumb_path,
                     attributes=part_attrs,
+                    progress_callback=_make_upload_progress_callback(
+                        video_id,
+                        nc,
+                        bytes_before_part=bytes_before_part,
+                        total_bytes=total_bytes,
+                        part=i,
+                        total_parts=total,
+                    ),
                 )
+                last_message_id = getattr(message, "id", None)
+                bytes_before_part += part_size
                 log.info("Uploaded part %d/%d of %s", i, total, video_id)
 
                 # Clean up part file after upload
@@ -177,8 +217,46 @@ async def handle_download_complete(
 
             log.info("All %d parts of %s uploaded successfully", total, video_id)
             upload_succeeded = True
+
+        if upload_succeeded and config is not None:
+            await _update_download_status(
+                config,
+                video_id,
+                "uploaded",
+                telegram_chat_id=int(target_chat),
+                telegram_msg_id=last_message_id if total_upload_parts == 1 else None,
+            )
+        await _publish_download_event(
+            nc,
+            "download.uploaded",
+            {
+                "video_id": video_id,
+                "status": "uploaded",
+                "telegram_chat_id": int(target_chat),
+                "telegram_msg_id": last_message_id if total_upload_parts == 1 else None,
+                "total_parts": total_upload_parts,
+            },
+        )
     except Exception as exc:
         log.exception("Upload failed for %s", video_id)
+        if config is not None:
+            await _update_download_status(
+                config,
+                video_id,
+                "upload_failed",
+                telegram_chat_id=int(target_chat),
+                error=f"Upload failed: {exc}",
+            )
+        await _publish_download_event(
+            nc,
+            "download.upload_failed",
+            {
+                "video_id": video_id,
+                "status": "upload_failed",
+                "telegram_chat_id": int(target_chat),
+                "error": str(exc),
+            },
+        )
         try:
             await tg.send_message(
                 target_chat,
@@ -425,3 +503,89 @@ def _safe_remove(path: str | None) -> None:
         os.remove(path)
     except OSError as e:
         log.warning("Could not delete %s: %s", path, e)
+
+
+def _make_upload_progress_callback(
+    video_id: str,
+    nc: Any | None,
+    *,
+    bytes_before_part: int,
+    total_bytes: int,
+    part: int,
+    total_parts: int,
+):
+    if nc is None or total_bytes <= 0:
+        return None
+
+    loop = asyncio.get_running_loop()
+    last_sent = {"bytes": -1, "ts": 0.0}
+
+    def callback(current: int | float, total: int | float) -> None:
+        sent_now = max(bytes_before_part, min(bytes_before_part + int(current), total_bytes))
+        now = time.monotonic()
+        if sent_now < total_bytes and sent_now - last_sent["bytes"] < 16 * 1024 * 1024 and now - last_sent["ts"] < 1.0:
+            return
+
+        last_sent["bytes"] = sent_now
+        last_sent["ts"] = now
+        loop.create_task(
+            _publish_download_event(
+                nc,
+                "download.upload_progress",
+                {
+                    "video_id": video_id,
+                    "status": "uploading",
+                    "uploaded_bytes": sent_now,
+                    "total_bytes": total_bytes,
+                    "part": part,
+                    "total_parts": total_parts,
+                },
+            )
+        )
+
+    return callback
+
+
+async def _publish_download_event(nc: Any | None, subject: str, payload: dict[str, Any]) -> None:
+    if nc is None:
+        return
+    try:
+        await nc.publish(subject, json.dumps(payload).encode())
+    except Exception:
+        log.exception("Failed to publish %s for %s", subject, payload.get("video_id"))
+
+
+async def _update_download_status(
+    config: Config,
+    video_id: str,
+    status: str,
+    *,
+    telegram_msg_id: int | None = None,
+    telegram_chat_id: int | None = None,
+    error: str | None = None,
+) -> None:
+    try:
+        import asyncpg
+
+        conn = await asyncpg.connect(config.database_url)
+        try:
+            await conn.execute(
+                """
+                UPDATE downloads
+                   SET status = $2,
+                       telegram_msg_id = COALESCE($3, telegram_msg_id),
+                       telegram_chat_id = COALESCE($4, telegram_chat_id),
+                       error_message = CASE WHEN $5::text IS NULL THEN NULL ELSE $5 END,
+                       updated_at = NOW()
+                 WHERE video_id = $1
+                """,
+                video_id,
+                status,
+                telegram_msg_id,
+                telegram_chat_id,
+                error,
+            )
+        finally:
+            await conn.close()
+    except Exception:
+        log.exception("Failed to update download status for %s", video_id)

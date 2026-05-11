@@ -109,6 +109,10 @@ func (h *Handler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings?oauth_error=db", http.StatusFound)
 		return
 	}
+	if err := h.Store.ResetOAuthYouTubeState(r.Context()); err != nil {
+		http.Redirect(w, r, "/settings?oauth_error=db", http.StatusFound)
+		return
+	}
 	_ = h.Store.SetSetting(r.Context(), "google.refresh_token", tokens.RefreshToken)
 	_ = h.NC.Publish("system.config_changed", []byte(`{"keys":["google.refresh_token"]}`))
 	http.Redirect(w, r, "/settings?oauth_ok=1", http.StatusFound)

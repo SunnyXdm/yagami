@@ -6,23 +6,25 @@ defmodule YoutubePoller.SubsWorker do
   use GenServer
   require Logger
 
+  @unsubscribe_confirmations 2
+
   def start_link(_), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
 
   @impl true
   def init(:ok) do
     Process.send_after(self(), :poll, 15_000)
-    {:ok, %{}}
+    {:ok, %{pending_unsubscribes: %{}}}
   end
 
   @impl true
   def handle_info(:poll, state) do
-    poll()
+    state = poll(state)
     interval = YoutubePoller.Settings.get_int("poll.interval_subs", 3600) * 1000
     Process.send_after(self(), :poll, interval)
     {:noreply, state}
   end
 
-  defp poll do
+  defp poll(state) do
     Logger.info("Polling subscriptions...")
     seeded = YoutubePoller.DB.seeded?("seeded_subs")
 
@@ -39,6 +41,7 @@ defmodule YoutubePoller.SubsWorker do
           Logger.info("Seeding #{length(subs)} existing subscriptions silently")
           for s <- subs, do: YoutubePoller.DB.insert_known_sub(s.channel_id, s.channel_title, s.thumbnail)
           YoutubePoller.DB.mark_seeded!("seeded_subs")
+          %{state | pending_unsubscribes: %{}}
 
         true ->
           for s <- new_subs do
@@ -48,17 +51,34 @@ defmodule YoutubePoller.SubsWorker do
             Logger.info("Subscribed: #{s.channel_title}")
           end
 
-          for cid <- removed do
+          {confirmed_removed, pending_unsubscribes} = confirm_removed(removed, state.pending_unsubscribes)
+
+          for cid <- confirmed_removed do
             sub = Map.get(known, cid, %{channel_id: cid})
             YoutubePoller.NatsClient.publish("youtube.unsubscribe", sub)
             YoutubePoller.DB.delete_known_sub(cid)
             YoutubePoller.DB.insert_event("unsubscribe", sub)
             Logger.info("Unsubscribed: #{sub.channel_title || cid}")
           end
+
+          %{state | pending_unsubscribes: pending_unsubscribes}
       end
     else
       {:error, reason} ->
         Logger.error("Subscriptions poll failed: #{inspect(reason)}")
+        state
     end
+  end
+
+  defp confirm_removed(removed, pending_unsubscribes) do
+    Enum.reduce(removed, {[], %{}}, fn cid, {confirmed, pending} ->
+      count = Map.get(pending_unsubscribes, cid, 0) + 1
+
+      if count >= @unsubscribe_confirmations do
+        {[cid | confirmed], pending}
+      else
+        {confirmed, Map.put(pending, cid, count)}
+      end
+    end)
   end
 end
