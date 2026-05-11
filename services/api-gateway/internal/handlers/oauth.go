@@ -42,10 +42,9 @@ func consumeOAuthState(s string) bool {
 const googleAuthURL = "https://accounts.google.com/o/oauth2/v2/auth"
 const googleTokenURL = "https://oauth2.googleapis.com/token"
 const googleScope = "https://www.googleapis.com/auth/youtube.readonly"
+const googleRedirectURL = "http://localhost:8787/api/oauth/google/callback"
 
 // OAuthStart returns the URL the user should be redirected to.
-// The redirect URI is derived from the request host so it works for
-// localhost or any reverse proxy (it must also be registered in GCP).
 func (h *Handler) OAuthStart(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.Store.GetSettings(r.Context(), "google.client_id", "google.client_secret")
 	if err != nil {
@@ -57,10 +56,9 @@ func (h *Handler) OAuthStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := newOAuthState()
-	redirect := publicURL(r) + "/api/oauth/google/callback"
 	q := url.Values{}
 	q.Set("client_id", cfg["google.client_id"])
-	q.Set("redirect_uri", redirect)
+	q.Set("redirect_uri", googleRedirectURL)
 	q.Set("response_type", "code")
 	q.Set("scope", googleScope)
 	q.Set("access_type", "offline")
@@ -68,7 +66,7 @@ func (h *Handler) OAuthStart(w http.ResponseWriter, r *http.Request) {
 	q.Set("state", state)
 	writeJSON(w, http.StatusOK, map[string]string{
 		"auth_url":     googleAuthURL + "?" + q.Encode(),
-		"redirect_uri": redirect,
+		"redirect_uri": googleRedirectURL,
 	})
 }
 
@@ -90,7 +88,7 @@ func (h *Handler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tokens, err := exchangeGoogleCode(cfg["google.client_id"], cfg["google.client_secret"],
-		code, publicURL(r)+"/api/oauth/google/callback")
+		code, googleRedirectURL)
 	if err != nil {
 		http.Redirect(w, r, "/settings?oauth_error="+url.QueryEscape(err.Error()), http.StatusFound)
 		return
@@ -153,17 +151,3 @@ func exchangeGoogleCode(id, secret, code, redirect string) (*googleTokenResp, er
 type errMsg string
 
 func (e errMsg) Error() string { return string(e) }
-
-func publicURL(r *http.Request) string {
-	scheme := "http"
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-		scheme = proto
-	} else if r.TLS != nil {
-		scheme = "https"
-	}
-	host := r.Host
-	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
-		host = h
-	}
-	return scheme + "://" + host
-}
