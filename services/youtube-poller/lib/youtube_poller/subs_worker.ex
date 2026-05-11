@@ -8,6 +8,7 @@ defmodule YoutubePoller.SubsWorker do
 
   @subscriptions_api_soft_cap 1000
   @unsubscribe_confirmations 2
+  @recent_subscription_window_seconds 86_400
 
   def start_link(_), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
 
@@ -33,27 +34,24 @@ defmodule YoutubePoller.SubsWorker do
          {:ok, subs} <- YoutubePoller.YoutubeApi.list_subscriptions(token) do
       known = YoutubePoller.DB.get_known_subscriptions()
       known_ids = Map.keys(known) |> MapSet.new()
-      current = MapSet.new(subs, & &1.channel_id)
+      visible_subs = unique_subscriptions(subs)
+      current = MapSet.new(visible_subs, & &1.channel_id)
+
       case subscription_snapshot_issue(subs, current, known_ids) do
         nil ->
           state = maybe_clear_snapshot_warning(state)
-          new_subs = Enum.reject(subs, &MapSet.member?(known_ids, &1.channel_id))
+          new_subs = Enum.reject(visible_subs, &MapSet.member?(known_ids, &1.channel_id))
           removed = MapSet.difference(known_ids, current) |> MapSet.to_list()
 
           cond do
             not seeded ->
-              Logger.info("Seeding #{length(subs)} existing subscriptions silently")
-              for s <- subs, do: YoutubePoller.DB.insert_known_sub(s.channel_id, s.channel_title, s.thumbnail)
+              Logger.info("Seeding #{length(visible_subs)} existing subscriptions silently")
+              absorb_subscriptions(visible_subs)
               YoutubePoller.DB.mark_seeded!("seeded_subs")
               %{state | pending_unsubscribes: %{}}
 
             true ->
-              for s <- new_subs do
-                YoutubePoller.NatsClient.publish("youtube.subscribe", s)
-                YoutubePoller.DB.insert_known_sub(s.channel_id, s.channel_title, s.thumbnail)
-                YoutubePoller.DB.insert_event("subscribe", s)
-                Logger.info("Subscribed: #{s.channel_title}")
-              end
+              publish_new_subscriptions(new_subs)
 
               {confirmed_removed, pending_unsubscribes} = confirm_removed(removed, state.pending_unsubscribes)
 
@@ -69,7 +67,29 @@ defmodule YoutubePoller.SubsWorker do
           end
 
         reason ->
-          warn_unstable_snapshot(reason, length(subs), MapSet.size(current), MapSet.size(known_ids), state.snapshot_warning_sent)
+          cond do
+            not seeded ->
+              Logger.info(
+                "Seeding #{length(visible_subs)} visible subscriptions silently from a partial upstream snapshot"
+              )
+
+              absorb_subscriptions(visible_subs)
+              YoutubePoller.DB.mark_seeded!("seeded_subs")
+
+            true ->
+              {recent_new_subs, stale_new_subs} = split_recent_new_subscriptions(visible_subs, known_ids)
+              publish_new_subscriptions(recent_new_subs)
+              absorb_subscriptions(stale_new_subs)
+          end
+
+          warn_unstable_snapshot(
+            reason,
+            length(subs),
+            MapSet.size(current),
+            MapSet.size(known_ids),
+            state.snapshot_warning_sent
+          )
+
           %{state | pending_unsubscribes: %{}, snapshot_warning_sent: true}
       end
     else
@@ -101,15 +121,15 @@ defmodule YoutubePoller.SubsWorker do
 
   defp warn_unstable_snapshot(reason, raw_count, unique_count, known_count, already_warned?) do
     message =
-      "Skipping subscriptions diff because the upstream snapshot is not trustworthy: #{reason}. " <>
+      "Skipping unsubscribe diff because the upstream snapshot is not trustworthy: #{reason}. " <>
         "received=#{raw_count}, unique=#{unique_count}, known=#{known_count}"
 
     Logger.warning(message)
 
     unless already_warned? do
       YoutubePoller.NatsClient.publish_debug(
-        "⚠️ Subscription monitoring is paused because YouTube returned an incomplete or duplicate-filled subscriptions snapshot. " <>
-          "This commonly happens on large accounts near the 1000-subscription API ceiling."
+        "⚠️ Unsubscribe monitoring is paused because YouTube returned an incomplete or duplicate-filled subscriptions snapshot. " <>
+          "Recent new subscriptions will still be reported when their created-at timestamp is fresh, but large accounts near the 1000-subscription API ceiling cannot support reliable unsubscribe detection."
       )
     end
   end
@@ -131,5 +151,58 @@ defmodule YoutubePoller.SubsWorker do
         {confirmed, Map.put(pending, cid, count)}
       end
     end)
+  end
+
+  defp publish_new_subscriptions(subs) do
+    for s <- subs do
+      YoutubePoller.NatsClient.publish("youtube.subscribe", s)
+      YoutubePoller.DB.insert_known_sub(s.channel_id, s.channel_title, s.thumbnail)
+      YoutubePoller.DB.insert_event("subscribe", s)
+      Logger.info("Subscribed: #{s.channel_title}")
+    end
+  end
+
+  defp absorb_subscriptions(subs) do
+    for s <- subs do
+      YoutubePoller.DB.insert_known_sub(s.channel_id, s.channel_title, s.thumbnail)
+    end
+  end
+
+  defp split_recent_new_subscriptions(subs, known_ids) do
+    subs
+    |> Enum.reject(&MapSet.member?(known_ids, &1.channel_id))
+    |> Enum.split_with(&recent_subscription?/1)
+  end
+
+  defp recent_subscription?(%{published_at: published_at}) when is_binary(published_at) do
+    case DateTime.from_iso8601(published_at) do
+      {:ok, created_at, _offset} ->
+        DateTime.diff(DateTime.utc_now(), created_at, :second) <= @recent_subscription_window_seconds
+
+      _ ->
+        false
+    end
+  end
+
+  defp recent_subscription?(_), do: false
+
+  defp unique_subscriptions(subs) do
+    {_, unique} =
+      Enum.reduce(subs, {MapSet.new(), []}, fn sub, {seen, acc} ->
+        channel_id = Map.get(sub, :channel_id)
+
+        cond do
+          is_nil(channel_id) ->
+            {seen, acc}
+
+          MapSet.member?(seen, channel_id) ->
+            {seen, acc}
+
+          true ->
+            {MapSet.put(seen, channel_id), [sub | acc]}
+        end
+      end)
+
+    Enum.reverse(unique)
   end
 end
