@@ -8,6 +8,8 @@ LEARNING (Python):
   but with explicit `await` keywords everywhere.
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import math
@@ -15,9 +17,23 @@ import os
 import subprocess
 import tempfile
 import urllib.request
+from typing import Any
 
-from telethon import TelegramClient
-from telethon.tl.types import DocumentAttributeVideo, DocumentAttributeFilename
+try:
+    from telethon import TelegramClient
+    from telethon.tl.types import DocumentAttributeVideo, DocumentAttributeFilename
+except ImportError:  # pragma: no cover - lets pure unit tests run without Telethon installed.
+    TelegramClient = Any
+
+    class DocumentAttributeVideo:  # type: ignore[no-redef]
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+    class DocumentAttributeFilename:  # type: ignore[no-redef]
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
 
 from .config import Config
 from .formatter import (
@@ -106,6 +122,7 @@ async def handle_download_complete(
     duration_secs = _get_video_duration(file_path)
     video_attrs = _make_video_attributes(video_id, video_w, video_h, duration_secs)
 
+    upload_succeeded = False
     try:
         if file_size <= MAX_UPLOAD_BYTES:
             # Single file upload
@@ -119,6 +136,7 @@ async def handle_download_complete(
                 attributes=video_attrs,
             )
             log.info("Uploaded %s to Telegram successfully", video_id)
+            upload_succeeded = True
         else:
             # Split and upload in parts
             parts = split_video(file_path)
@@ -144,9 +162,19 @@ async def handle_download_complete(
                 _safe_remove(part_path)
 
             log.info("All %d parts of %s uploaded successfully", total, video_id)
+            upload_succeeded = True
+    except Exception as exc:
+        log.exception("Upload failed for %s", video_id)
+        try:
+            await tg.send_message(
+                target_chat,
+                f"\u274c Upload failed: {data.get('title', video_id)}\n{exc}",
+            )
+        except Exception:
+            log.exception("Failed to send upload error notification for %s", video_id)
     finally:
-        # Clean up original file and thumbnail
-        _safe_remove(file_path)
+        if upload_succeeded:
+            _safe_remove(file_path)
         _safe_remove(thumb_path)
 
 
@@ -165,10 +193,12 @@ def prepare_thumbnail(thumbnail_url: str | None, video_path: str | None = None) 
     if not thumbnail_url:
         return None
 
+    tmp = None
     try:
         from PIL import Image
 
-        tmp = tempfile.mktemp(suffix=".jpg")
+        fd, tmp = tempfile.mkstemp(suffix=".jpg")
+        os.close(fd)
         urllib.request.urlretrieve(thumbnail_url, tmp)
 
         # Get the video's actual aspect ratio
@@ -188,6 +218,7 @@ def prepare_thumbnail(thumbnail_url: str | None, video_path: str | None = None) 
         return tmp
     except Exception as e:
         log.warning("Failed to prepare thumbnail: %s", e)
+        _safe_remove(tmp)
         return None
 
 
@@ -307,7 +338,12 @@ def split_video(file_path: str) -> list[str]:
         capture_output=True,
         text=True,
     )
-    duration = float(result.stdout.strip())
+    stdout = result.stdout.strip()
+    if not stdout:
+        raise RuntimeError(f"ffprobe returned empty duration output for {file_path}")
+    duration = float(stdout)
+    if duration <= 0:
+        raise RuntimeError(f"ffprobe returned non-positive duration {duration!r} for {file_path}")
     segment_duration = duration / num_parts
 
     parts = []

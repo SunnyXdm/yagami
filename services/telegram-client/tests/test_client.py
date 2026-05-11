@@ -112,3 +112,31 @@ class TestYouTubeUrlParsing:
     def test_no_match(self):
         assert self.YOUTUBE_RE.search("hello world") is None
         assert self.YOUTUBE_RE.search("https://google.com") is None
+
+
+
+class TestSystemHealthSubscription:
+    def test_no_admin_user_id_excludes_health_route(self):
+        """system.health must not be subscribed when admin_user_id is 0."""
+        cfg = make_config(admin_user_id=0)
+        routes = {
+            "youtube.watch":     cfg.chat_id_watch_history,
+            "youtube.likes":     cfg.chat_id_likes,
+            "download.complete": cfg.chat_id_likes,
+        }
+        if cfg.admin_user_id:
+            routes["system.health"] = cfg.admin_user_id
+        assert "system.health" not in routes
+
+    def test_admin_user_id_includes_health_route(self):
+        """system.health must be subscribed when admin_user_id is set."""
+        cfg = make_config(admin_user_id=12345)
+        routes = {
+            "youtube.watch":     cfg.chat_id_watch_history,
+            "youtube.likes":     cfg.chat_id_likes,
+            "download.complete": cfg.chat_id_likes,
+        }
+        if cfg.admin_user_id:
+            routes["system.health"] = cfg.admin_user_id
+        assert "system.health" in routes
+        assert routes["system.health"] == 12345

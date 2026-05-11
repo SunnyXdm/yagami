@@ -1,6 +1,7 @@
-# === Secrets — NEVER commit these ===
+# === Secrets — never commit these ===
+# (Yagami stores secrets in Postgres now, not env files. These patterns
+#  remain to catch anything legacy or experimental.)
 .env
-config/cookies.txt
 *.session
 
 # === Python ===
@@ -12,8 +13,13 @@ venv/
 .venv/
 dist/
 
+# === Node / frontend ===
+node_modules/
+services/frontend/dist/
+
 # === Go ===
 services/api-gateway/api-gateway
+.cache/
 
 # === Elixir ===
 services/youtube-poller/_build/

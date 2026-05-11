@@ -1,11 +1,10 @@
 # ============================================================
 #  Project Yagami — Compose
 #  Start everything: docker compose up -d
+#  Open the web UI:  http://localhost:8787
 # ============================================================
 
 services:
-  # ── Infrastructure ─────────────────────────────────────────
-
   postgres:
     image: postgres:16-alpine
     volumes:
@@ -14,13 +13,12 @@ services:
     environment:
       POSTGRES_DB: yagami
       POSTGRES_USER: yagami
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: yagami
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U yagami"]
       interval: 5s
-      retries: 5
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   nats:
@@ -28,79 +26,79 @@ services:
     command: ["--jetstream", "--store_dir", "/data"]
     volumes:
       - natsdata:/data
-    ports:
-      - "4222:4222"     # Client connections
-      - "8222:8222"     # Monitoring dashboard
+    expose:
+      - "4222"
+      - "8222"
     restart: unless-stopped
-
-  # ── Application Services ───────────────────────────────────
 
   api-gateway:
     build: ./services/api-gateway
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
     environment:
-      DATABASE_URL: postgres://yagami:${DB_PASSWORD}@postgres:5432/yagami
+      DATABASE_URL: postgres://yagami:yagami@postgres:5432/yagami
       NATS_URL: nats://nats:4222
     depends_on:
       postgres: { condition: service_healthy }
       nats:     { condition: service_started }
+    volumes:
+      - cookies:/cookies
     restart: unless-stopped
 
   youtube-poller:
     build: ./services/youtube-poller
-    volumes:
-      - ./config/cookies.txt:/config/cookies.txt
     environment:
-      DATABASE_URL: postgres://yagami:${DB_PASSWORD}@postgres:5432/yagami
+      DATABASE_URL: postgres://yagami:yagami@postgres:5432/yagami
       NATS_URL: nats://nats:4222
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN}
-      COOKIES_PATH: /config/cookies.txt
-      POLL_INTERVAL_LIKES: "300"
-      POLL_INTERVAL_HISTORY: "300"
+      COOKIES_PATH: /cookies/cookies.txt
     depends_on:
       postgres: { condition: service_healthy }
       nats:     { condition: service_started }
+    volumes:
+      - cookies:/cookies
     restart: unless-stopped
 
   downloader:
     build: ./services/downloader
-    volumes:
-      - downloads:/tmp/ytdl
-      - ./config/cookies.txt:/config/cookies.txt
     environment:
+      DATABASE_URL: postgres://yagami:yagami@postgres:5432/yagami
       NATS_URL: nats://nats:4222
       DOWNLOAD_DIR: /tmp/ytdl
-      MAX_CONCURRENT_DOWNLOADS: "2"
-      COOKIES_PATH: /config/cookies.txt
+      COOKIES_PATH: /cookies/cookies.txt
     depends_on:
-      nats: { condition: service_started }
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_started }
+    volumes:
+      - downloads:/tmp/ytdl
+      - cookies:/cookies
     restart: unless-stopped
 
   telegram-client:
     build: ./services/telegram-client
+    environment:
+      DATABASE_URL: postgres://yagami:yagami@postgres:5432/yagami
+      NATS_URL: nats://nats:4222
+    depends_on:
+      postgres: { condition: service_healthy }
+      nats:     { condition: service_started }
     volumes:
       - downloads:/tmp/ytdl
       - telegram_session:/app/session
-    environment:
-      NATS_URL: nats://nats:4222
-      DATABASE_URL: postgres://yagami:${DB_PASSWORD}@postgres:5432/yagami
-      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
-      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
-      TELEGRAM_SESSION_STRING: ${TELEGRAM_SESSION_STRING}
-      TELEGRAM_CHAT_ID_LIKES: ${TELEGRAM_CHAT_ID_LIKES}
-      TELEGRAM_CHAT_ID_WATCH_HISTORY: ${TELEGRAM_CHAT_ID_WATCH_HISTORY}
-      TELEGRAM_ADMIN_USER_ID: ${TELEGRAM_ADMIN_USER_ID}
+    restart: unless-stopped
+
+  frontend:
+    build: ./services/frontend
+    ports:
+      - "127.0.0.1:8787:80"
     depends_on:
-      nats: { condition: service_started }
+      - api-gateway
     restart: unless-stopped
 
 volumes:
   pgdata:
   natsdata:
   telegram_session:
+  cookies:
   downloads:
     driver: local
     driver_opts:

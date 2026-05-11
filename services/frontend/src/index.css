@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root { height: 100%; }
+body {
+  @apply text-text font-sans antialiased;
+  background:
+    radial-gradient(800px 400px at 80% -10%, rgba(124, 92, 255, 0.18), transparent 60%),
+    radial-gradient(600px 300px at -10% 20%, rgba(255, 61, 87, 0.12), transparent 60%),
+    #0a0a0c;
+  background-attachment: fixed;
+}
+
+::selection { background: rgba(124, 92, 255, 0.45); color: #fff; }
+
+/* tiny utility for subtle dividers */
+.divider { border-color: rgba(255,255,255,0.06); }
+
+/* nice scrollbar */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: #1f1f25; border-radius: 6px; }
+*::-webkit-scrollbar-thumb:hover { background: #2a2a32; }

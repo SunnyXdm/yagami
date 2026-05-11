@@ -23,4 +23,21 @@ defmodule YoutubePoller.OAuthTest do
       assert diff == 300
     end
   end
+
+  describe "token_valid?/1" do
+    test "token expiring in more than 5 minutes is valid" do
+      future = DateTime.add(DateTime.utc_now(), 600, :second)
+      assert YoutubePoller.OAuth.token_valid?(future)
+    end
+
+    test "token expiring in less than 5 minutes is not valid" do
+      near_future = DateTime.add(DateTime.utc_now(), 60, :second)
+      refute YoutubePoller.OAuth.token_valid?(near_future)
+    end
+
+    test "already expired token is not valid" do
+      past = DateTime.add(DateTime.utc_now(), -3600, :second)
+      refute YoutubePoller.OAuth.token_valid?(past)
+    end
+  end
 end

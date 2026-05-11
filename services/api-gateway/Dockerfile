@@ -1,12 +1,16 @@
-# Build stage — compile Go binary
+# syntax=docker/dockerfile:1
+
 FROM golang:1.22-alpine AS builder
 WORKDIR /app
-COPY . .
-RUN go mod tidy
-RUN CGO_ENABLED=0 go build -o /api-gateway ./cmd/server
 
-# Run stage — tiny image with just the binary
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /api-gateway ./cmd/server
+
 FROM alpine:3.19
+RUN apk add --no-cache ca-certificates tzdata
 COPY --from=builder /api-gateway /api-gateway
 EXPOSE 8080
 ENTRYPOINT ["/api-gateway"]

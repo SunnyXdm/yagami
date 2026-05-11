@@ -1,7 +1,10 @@
-FROM python:3.12-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+FROM python:3.12-alpine
+
+RUN apk add --no-cache ffmpeg libjpeg-turbo zlib \
+    && apk add --no-cache --virtual .build-deps gcc musl-dev python3-dev postgresql-dev jpeg-dev zlib-dev
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && apk del .build-deps
 COPY . .
 ENTRYPOINT ["python", "-m", "telegram_client"]

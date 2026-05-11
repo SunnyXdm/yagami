@@ -8,6 +8,8 @@ LEARNING (Python):
   but help editors, linters, and future-you understand the code.
 """
 
+from __future__ import annotations
+
 
 def format_duration(seconds: int | None) -> str:
     """Convert seconds → 'HH:MM:SS' or 'MM:SS'."""

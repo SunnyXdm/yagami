@@ -1,43 +1,29 @@
 defmodule YoutubePoller.YoutubeApi do
-  @moduledoc """
-  YouTube Data API v3 client — fetches liked videos.
-
-  LEARNING: Elixir's |> (pipe) operator chains function calls left-to-right.
-  Instead of: Enum.map(Enum.filter(list, &f/1), &g/1)
-  You write:  list |> Enum.filter(&f/1) |> Enum.map(&g/1)
-  Much more readable!
-  """
+  @moduledoc "YouTube Data API v3 — liked videos & subscriptions."
   require Logger
 
   @base_url "https://www.googleapis.com/youtube/v3"
 
-  @doc "Fetch all liked videos (auto-paginates). Returns {:ok, list} or {:error, reason}."
   def list_liked_videos(token) do
-    case fetch_all_pages("#{@base_url}/videos", %{
-      part: "snippet,contentDetails",
-      myRating: "like",
-      maxResults: 50
-    }, token) do
+    case fetch_all_pages("#{@base_url}/videos",
+           %{part: "snippet,contentDetails", myRating: "like", maxResults: 50},
+           token) do
       {:ok, items} -> {:ok, Enum.map(items, &parse_video/1)}
-      {:error, reason} -> {:error, reason}
+      err -> err
     end
   end
 
-  # --- Private helpers ---
+  def list_subscriptions(token) do
+    case fetch_all_pages("#{@base_url}/subscriptions",
+           %{part: "snippet", mine: "true", maxResults: 50},
+           token) do
+      {:ok, items} -> {:ok, Enum.map(items, &parse_subscription/1)}
+      err -> err
+    end
+  end
 
-  # LEARNING: Recursive function with accumulator pattern.
-  # Each call fetches one page and passes the nextPageToken to the next call.
-  # When there's no next page, we return the accumulated items.
-  # On error, returns {:error, reason} instead of partial data — this prevents
-  # false diffs when only some pages succeed.
   defp fetch_all_pages(url, params, token, page_token \\ nil, acc \\ []) do
-    params =
-      if page_token do
-        Map.put(params, :pageToken, page_token)
-      else
-        params
-      end
-
+    params = if page_token, do: Map.put(params, :pageToken, page_token), else: params
     headers = [{"authorization", "Bearer #{token}"}]
 
     case Req.get(url, params: params, headers: headers) do
@@ -45,12 +31,7 @@ defmodule YoutubePoller.YoutubeApi do
         items = Map.get(body, "items", [])
         next = Map.get(body, "nextPageToken")
         all = acc ++ items
-
-        if next do
-          fetch_all_pages(url, params, token, next, all)
-        else
-          {:ok, all}
-        end
+        if next, do: fetch_all_pages(url, params, token, next, all), else: {:ok, all}
 
       {:ok, %{status: 403, body: body}} ->
         if quota_exceeded?(body) do
@@ -74,13 +55,11 @@ defmodule YoutubePoller.YoutubeApi do
   defp quota_exceeded?(%{"error" => %{"errors" => errors}}) when is_list(errors) do
     Enum.any?(errors, fn e -> e["reason"] == "quotaExceeded" end)
   end
-
   defp quota_exceeded?(_), do: false
 
   defp parse_video(item) do
-    snippet = item["snippet"]
-    content = item["contentDetails"]
-
+    snippet = item["snippet"] || %{}
+    content = item["contentDetails"] || %{}
     %{
       video_id: item["id"],
       title: snippet["title"],
@@ -92,47 +71,36 @@ defmodule YoutubePoller.YoutubeApi do
     }
   end
 
-  # Pick the highest quality thumbnail available.
-  # YouTube provides: default (120x90), medium (320x180), high (480x360),
-  # standard (640x480), maxres (1280x720). Not all are always present.
-  defp best_thumbnail(snippet) do
-    thumbs = snippet["thumbnails"] || %{}
-
-    (get_in(thumbs, ["maxres", "url"]) ||
-       get_in(thumbs, ["standard", "url"]) ||
-       get_in(thumbs, ["high", "url"]) ||
-       get_in(thumbs, ["medium", "url"]))
+  defp parse_subscription(item) do
+    snippet = item["snippet"] || %{}
+    res = snippet["resourceId"] || %{}
+    %{
+      channel_id: res["channelId"],
+      channel_title: snippet["title"],
+      thumbnail: best_thumbnail(snippet),
+      published_at: snippet["publishedAt"]
+    }
   end
 
-  @doc """
-  Parse ISO 8601 duration (PT1H2M3S) into human-readable string.
+  defp best_thumbnail(snippet) do
+    thumbs = snippet["thumbnails"] || %{}
+    get_in(thumbs, ["maxres", "url"]) ||
+      get_in(thumbs, ["standard", "url"]) ||
+      get_in(thumbs, ["high", "url"]) ||
+      get_in(thumbs, ["medium", "url"]) ||
+      get_in(thumbs, ["default", "url"])
+  end
 
-  LEARNING: Named captures in regex + pattern matching on the result.
-  Regex.named_captures returns a map like %{"h" => "1", "m" => "2", "s" => "3"}.
-  """
   def parse_duration(nil), do: "unknown"
-
-  def parse_duration(iso_string) do
-    # LEARNING: ~r is a sigil for regex. Named captures use (?<name>pattern).
+  def parse_duration(iso) do
     regex = ~r/PT(?:(?<h>\d+)H)?(?:(?<m>\d+)M)?(?:(?<s>\d+)S)?/
-    captures = Regex.named_captures(regex, iso_string) || %{}
-
-    hours = parse_int(captures["h"])
-    minutes = parse_int(captures["m"])
-    seconds = parse_int(captures["s"])
-
-    cond do
-      hours > 0 ->
-        "#{hours}:#{pad(minutes)}:#{pad(seconds)}"
-
-      true ->
-        "#{minutes}:#{pad(seconds)}"
-    end
+    c = Regex.named_captures(regex, iso) || %{}
+    h = parse_int(c["h"]); m = parse_int(c["m"]); s = parse_int(c["s"])
+    if h > 0, do: "#{h}:#{pad(m)}:#{pad(s)}", else: "#{m}:#{pad(s)}"
   end
 
   defp parse_int(nil), do: 0
   defp parse_int(""), do: 0
   defp parse_int(s), do: String.to_integer(s)
-
   defp pad(n), do: String.pad_leading(Integer.to_string(n), 2, "0")
 end

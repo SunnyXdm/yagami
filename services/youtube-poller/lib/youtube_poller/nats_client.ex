@@ -1,61 +1,68 @@
 defmodule YoutubePoller.NatsClient do
-  @moduledoc """
-  GenServer that holds a NATS connection and exposes a publish/2 function.
-
-  LEARNING: GenServer is the workhorse of OTP. It's a process that holds state
-  and responds to messages. The pattern is:
-    1. init/1       — set up initial state
-    2. handle_call  — synchronous request/response
-    3. handle_cast  — async fire-and-forget
-    4. handle_info  — messages from outside GenServer protocol
-  """
+  @moduledoc "GenServer wrapping a Gnat NATS connection."
   use GenServer
   require Logger
 
-  # --- Public API ---
+  def start_link(_), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
 
-  def start_link(_opts) do
-    GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
-  end
-
-  @doc "Publish a JSON message to a NATS subject."
   def publish(subject, data) when is_binary(subject) do
     GenServer.call(__MODULE__, {:publish, subject, Jason.encode!(data)})
   end
 
-  @doc "Send a debug/error message to the admin via NATS."
+  def publish_raw(subject, payload) when is_binary(subject) and is_binary(payload) do
+    case Process.whereis(__MODULE__) do
+      nil -> {:error, :not_started}
+      _ -> GenServer.call(__MODULE__, {:publish, subject, payload}, 1000)
+    end
+  rescue
+    _ -> :ok
+  catch
+    :exit, _ -> :ok
+  end
+
   def publish_debug(message) when is_binary(message) do
     publish("system.health", %{type: "debug", message: message})
   end
 
-  # --- GenServer callbacks ---
-
   @impl true
   def init(:ok) do
-    nats_url = Application.get_env(:youtube_poller, :nats_url, "nats://localhost:4222")
+    nats_url = System.get_env("NATS_URL", "nats://nats:4222")
     uri = URI.parse(nats_url)
 
-    connection_settings = %{
-      host: uri.host || "localhost",
-      port: uri.port || 4222
-    }
+    settings = %{host: uri.host || "nats", port: uri.port || 4222}
 
-    case Gnat.start_link(connection_settings) do
+    case Gnat.start_link(settings) do
       {:ok, conn} ->
-        Logger.info("Connected to NATS at #{uri.host}:#{uri.port}")
+        Logger.info("Connected to NATS at #{settings.host}:#{settings.port}")
+        # Subscribe to config-changed events to refresh ETS cache
+        spawn(fn ->
+          Process.sleep(2_000)
+          try do
+            Gnat.sub(conn, self(), "system.config_changed")
+            loop_config_listener()
+          rescue
+            _ -> :ok
+          end
+        end)
         {:ok, %{conn: conn}}
-
       {:error, reason} ->
-        Logger.error("Failed to connect to NATS: #{inspect(reason)}")
-        # LEARNING: Returning {:stop, reason} from init/1 tells the supervisor
-        # this process failed to start and should be restarted.
+        Logger.error("NATS connect failed: #{inspect(reason)}")
         {:stop, reason}
+    end
+  end
+
+  defp loop_config_listener do
+    receive do
+      {:msg, _} ->
+        if Process.whereis(YoutubePoller.Settings), do: YoutubePoller.Settings.reload()
+        loop_config_listener()
+      _ ->
+        loop_config_listener()
     end
   end
 
   @impl true
   def handle_call({:publish, subject, payload}, _from, %{conn: conn} = state) do
-    result = Gnat.pub(conn, subject, payload)
-    {:reply, result, state}
+    {:reply, Gnat.pub(conn, subject, payload), state}
   end
 end

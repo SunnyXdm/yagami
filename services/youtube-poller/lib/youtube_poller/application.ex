@@ -1,11 +1,5 @@
 defmodule YoutubePoller.Application do
-  @moduledoc """
-  OTP Application — starts the supervision tree.
-
-  LEARNING: An OTP Application is the entry point. The supervisor watches
-  all child processes and restarts them if they crash (let it crash philosophy).
-  Children start in order, so DB must come before workers that use it.
-  """
+  @moduledoc "OTP supervision tree."
   use Application
 
   @impl true
@@ -13,27 +7,22 @@ defmodule YoutubePoller.Application do
     db_config = YoutubePoller.DB.config()
 
     children = [
-      # 1. Database connection (must start first — workers depend on it)
       {Postgrex, db_config ++ [name: YoutubePoller.DB]},
-
-      # 2. NATS connection (workers publish through this)
+      YoutubePoller.Settings,
       YoutubePoller.NatsClient,
-
-      # 3. Startup health check (runs once, then exits)
-      %{
-        id: YoutubePoller.HealthCheck,
-        start: {YoutubePoller.HealthCheck, :start_link, [[]]},
-        restart: :temporary
-      },
-
-      # 4. Polling workers (start after DB + NATS are ready)
+      YoutubePoller.CookiesSync,
+      YoutubePoller.Heartbeat,
       YoutubePoller.LikesWorker,
-      YoutubePoller.HistoryWorker
+      YoutubePoller.HistoryWorker,
+      YoutubePoller.SubsWorker
     ]
 
-    # LEARNING: :one_for_one means if one child crashes, only that child restarts.
-    # Other strategies: :one_for_all (restart all), :rest_for_one (restart crashed + later ones).
-    opts = [strategy: :one_for_one, name: YoutubePoller.Supervisor]
-    Supervisor.start_link(children, opts)
+    # Install NATS log handler once supervision tree is up.
+    spawn(fn ->
+      Process.sleep(3_000)
+      YoutubePoller.LogBackend.install()
+    end)
+
+    Supervisor.start_link(children, strategy: :one_for_one, name: YoutubePoller.Supervisor)
   end
 end

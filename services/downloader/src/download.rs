@@ -57,10 +57,6 @@ pub async fn download_video(video_id: &str, url: &str, config: &Config) -> Resul
         output_template,
         "--no-playlist".to_string(),
         "--write-info-json".to_string(),
-        "--js-runtimes".to_string(),
-        "node".to_string(),
-        "--remote-components".to_string(),
-        "ejs:github".to_string(),
     ];
 
     // Pass cookies directly — mounted read-write so yt-dlp can update rotated cookies
@@ -83,13 +79,19 @@ pub async fn download_video(video_id: &str, url: &str, config: &Config) -> Resul
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         error!("yt-dlp failed for {}: {}", video_id, stderr);
-        anyhow::bail!("yt-dlp exited with: {}", stderr.chars().take(200).collect::<String>());
+        anyhow::bail!(
+            "yt-dlp exited with: {}",
+            stderr.chars().take(200).collect::<String>()
+        );
     }
 
     let file_path = find_downloaded_file(&config.download_dir, video_id)?;
     let metadata = read_info_json(&config.download_dir, video_id);
 
-    Ok(DownloadOutput { file_path, metadata })
+    Ok(DownloadOutput {
+        file_path,
+        metadata,
+    })
 }
 
 /// Find the file that yt-dlp created (we don't know the extension ahead of time).
@@ -97,19 +99,38 @@ pub async fn download_video(video_id: &str, url: &str, config: &Config) -> Resul
 /// LEARNING: `std::fs::read_dir` returns an iterator of Result<DirEntry>.
 /// We use `.filter_map(|e| e.ok())` to skip any errors and unwrap the Ok values.
 fn find_downloaded_file(dir: &str, video_id: &str) -> Result<String> {
-    for entry in std::fs::read_dir(dir)?.filter_map(|e| e.ok()) {
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        // Skip metadata files — we only want the actual video file (.mp4, .webm, etc.)
-        if name_str.starts_with(video_id)
-            && !name_str.ends_with(".info.json")
-            && !name_str.ends_with(".part")
-            && !name_str.ends_with(".ytdl")
-        {
-            return Ok(entry.path().to_string_lossy().to_string());
-        }
+    // Collect all candidate files first so we can prefer the final merged output
+    // over yt-dlp fragment files (e.g. abc123.f137.mp4 vs abc123.mp4).
+    let entries: Vec<_> = std::fs::read_dir(dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name();
+            let s = name.to_string_lossy();
+            s.starts_with(video_id)
+                && !s.ends_with(".info.json")
+                && !s.ends_with(".part")
+                && !s.ends_with(".ytdl")
+        })
+        .collect();
+
+    if entries.is_empty() {
+        anyhow::bail!("Downloaded file not found for {}", video_id);
     }
-    anyhow::bail!("Downloaded file not found for {}", video_id)
+
+    // Prefer the entry whose stem is exactly video_id (e.g. abc123.mp4).
+    // Fragment files have compound stems like abc123.f137, so they won't match.
+    if let Some(final_entry) = entries.iter().find(|e| {
+        e.path()
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(|s| s == video_id)
+            .unwrap_or(false)
+    }) {
+        return Ok(final_entry.path().to_string_lossy().to_string());
+    }
+
+    // No clean final output yet — fall back to the first matching fragment.
+    Ok(entries[0].path().to_string_lossy().to_string())
 }
 
 /// Get video metadata (file size) without downloading.
@@ -250,5 +271,43 @@ mod tests {
         let result = find_downloaded_file(dir.path().to_str().unwrap(), "abc123");
         assert!(result.is_ok());
         assert!(result.unwrap().contains("abc123.mp4"));
+    }
+
+    #[test]
+    fn test_find_downloaded_file_prefers_clean_mp4() {
+        let dir = tempfile::tempdir().unwrap();
+        // Simulate yt-dlp intermediate fragments and final merged output.
+        fs::File::create(dir.path().join("abc123.f137.mp4")).unwrap();
+        fs::File::create(dir.path().join("abc123.f251.webm")).unwrap();
+        fs::File::create(dir.path().join("abc123.mp4")).unwrap();
+
+        let result = find_downloaded_file(dir.path().to_str().unwrap(), "abc123").unwrap();
+        // Must return the final merged file, not a fragment.
+        assert!(
+            result.contains("abc123.mp4"),
+            "expected abc123.mp4, got {}",
+            result
+        );
+        assert!(
+            !result.contains(".f137."),
+            "should not return fragment .f137."
+        );
+        assert!(
+            !result.contains(".f251."),
+            "should not return fragment .f251."
+        );
+    }
+
+    #[test]
+    fn test_find_downloaded_file_falls_back_to_fragment() {
+        let dir = tempfile::tempdir().unwrap();
+        // No final merged file — only a fragment is present.
+        fs::File::create(dir.path().join("abc123.f137.mp4")).unwrap();
+
+        let result = find_downloaded_file(dir.path().to_str().unwrap(), "abc123");
+        assert!(
+            result.is_ok(),
+            "should fall back to fragment when no merged file exists"
+        );
     }
 }

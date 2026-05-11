@@ -1,99 +1,136 @@
-/// Yagami Downloader — listens for download requests on NATS and uses
-/// yt-dlp to download videos, then publishes the result back to NATS.
-///
-/// LEARNING: This is a "DB-free" service. It only talks via NATS messages.
-/// Input:  download.request  → {video_id, title, url}
-/// Output: download.complete → {video_id, title, file_path, file_size, success}
-///
-/// Key Rust concepts used:
-/// - Ownership & borrowing (& references)
-/// - async/await with tokio
-/// - Error handling with Result and ?
-/// - Concurrency with Arc + Semaphore
-/// - Pattern matching with match
 mod config;
+mod db;
 mod download;
 mod models;
+mod observability;
 
 use anyhow::Result;
+use async_nats::Client;
 use futures::StreamExt;
 use log::{error, info, warn};
-use std::sync::Arc;
-use tokio::sync::Semaphore;
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex};
+use tokio::sync::{RwLock, Semaphore};
 
 use config::Config;
+use db::{Db, RuntimeSettings};
 use models::{DownloadRequest, DownloadResult};
 
-/// LEARNING: #[tokio::main] transforms main() into an async function.
-/// Tokio is the async runtime — it manages the event loop, like asyncio in Python.
 #[tokio::main]
 async fn main() -> Result<()> {
     env_logger::init();
 
     let config = Arc::new(Config::from_env());
-    info!("Starting downloader service");
-
-    // Create download directory
+    info!("starting downloader service");
     std::fs::create_dir_all(&config.download_dir)?;
 
-    // Connect to NATS
-    // LEARNING: `.await` suspends this function until the future completes.
-    // `?` propagates any error. Combined: `.await?` = await and unwrap.
-    let client = async_nats::connect(&config.nats_url).await?;
-    info!("Connected to NATS at {}", config.nats_url);
+    let db = Db::connect(&config.database_url).await?;
+    info!("connected to postgres");
 
-    // Subscribe to download requests
+    let runtime = Arc::new(RwLock::new(RuntimeSettings {
+        max_concurrent: config.max_concurrent,
+        ..RuntimeSettings::default()
+    }));
+    if let Ok(s) = db.load_settings().await {
+        *runtime.write().await = s;
+    }
+    tokio::spawn(db::run_settings_loop(
+        db.clone(),
+        runtime.clone(),
+        config.cookies_path.clone(),
+    ));
+
+    let client: Client = async_nats::connect(&config.nats_url).await?;
+    info!("connected to NATS at {}", config.nats_url);
+    observability::spawn_heartbeat(client.clone());
+    observability::publish_log(&client, "info", "downloader online").await;
+
     let mut subscriber = client.subscribe("download.request").await?;
-    info!("Listening for download requests...");
+    info!("listening for download requests...");
 
-    // LEARNING: Semaphore limits concurrent downloads. Arc (Atomic Reference Count)
-    // lets multiple async tasks share ownership of the semaphore safely.
-    // This is Rust's answer to "how do I share data between threads?"
-    let semaphore = Arc::new(Semaphore::new(config.max_concurrent));
+    let initial_concurrency = runtime.read().await.max_concurrent;
+    let semaphore = Arc::new(Semaphore::new(initial_concurrency));
+    let in_flight: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
 
-    // LEARNING: `while let Some(msg) = subscriber.next().await` is an
-    // async iterator pattern. It pulls messages one at a time, awaiting each.
     while let Some(msg) = subscriber.next().await {
-        // Parse the incoming message
         let request: DownloadRequest = match serde_json::from_slice(&msg.payload) {
-            Ok(req) => req,
+            Ok(r) => r,
             Err(e) => {
-                warn!("Invalid download request: {}", e);
+                warn!("bad request: {e}");
                 continue;
             }
         };
 
-        info!("Download request: {} ({})", request.title, request.video_id);
+        info!("download request: {} ({})", request.title, request.video_id);
 
-        // LEARNING: `.clone()` creates a deep copy. We need this because
-        // each spawned task needs its own copy of these Arc pointers.
-        // Arc::clone is cheap — it just increments a counter.
+        {
+            let mut set = in_flight.lock().unwrap();
+            if !set.insert(request.video_id.clone()) {
+                warn!("duplicate in-flight: {}", request.video_id);
+                continue;
+            }
+        }
+
+        let _ = db.upsert_download_queued(&request).await;
+
         let client = client.clone();
         let config = Arc::clone(&config);
         let semaphore = Arc::clone(&semaphore);
+        let in_flight = Arc::clone(&in_flight);
+        let db = db.clone();
+        let runtime = runtime.clone();
 
-        // Spawn a new async task for each download
-        // LEARNING: `tokio::spawn` is like `asyncio.create_task()` — it runs
-        // the future concurrently without blocking the main loop.
         tokio::spawn(async move {
-            // LEARNING: `.acquire_owned()` waits until a permit is available,
-            // enforcing our max concurrent downloads limit. The permit is
-            // automatically released when `_permit` is dropped (RAII pattern).
             let _permit = match semaphore.acquire_owned().await {
                 Ok(p) => p,
-                Err(_) => return,
+                Err(_) => {
+                    in_flight.lock().unwrap().remove(&request.video_id);
+                    return;
+                }
             };
 
-            let result = process_download(&request, &config).await;
+            let _ = db.mark_downloading(&request.video_id).await;
+            let result = process_download(&request, &config, &runtime).await;
+            in_flight.lock().unwrap().remove(&request.video_id);
 
-            // Publish result to NATS
+            if result.success {
+                let fp = result.file_path.clone().unwrap_or_default();
+                let fs = result.file_size.unwrap_or(0) as i64;
+                let _ = db
+                    .mark_completed(
+                        &request.video_id,
+                        &fp,
+                        fs,
+                        result.channel.as_deref(),
+                        result.channel_id.as_deref(),
+                        result.duration.as_deref(),
+                        result.thumbnail.as_deref(),
+                    )
+                    .await;
+                observability::publish_log(
+                    &client,
+                    "info",
+                    &format!("downloaded {} ({} bytes)", request.video_id, fs),
+                )
+                .await;
+            } else {
+                let err = result.error.clone().unwrap_or_default();
+                let _ = db.mark_failed(&request.video_id, &err).await;
+                observability::publish_log(
+                    &client,
+                    "error",
+                    &format!("download failed {}: {}", request.video_id, err),
+                )
+                .await;
+            }
+
             match serde_json::to_vec(&result) {
                 Ok(payload) => {
                     if let Err(e) = client.publish("download.complete", payload.into()).await {
-                        error!("Failed to publish result: {}", e);
+                        error!("publish result failed: {e}");
                     }
                 }
-                Err(e) => error!("Failed to serialize result: {}", e),
+                Err(e) => error!("serialize failed: {e}"),
             }
         });
     }
@@ -101,42 +138,49 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Process a single download request.
-///
-/// LEARNING: `&` means "borrow" — we're reading the data without taking ownership.
-/// The original data stays valid. This is Rust's core memory safety mechanism.
-async fn process_download(request: &DownloadRequest, config: &Config) -> DownloadResult {
+async fn process_download(
+    request: &DownloadRequest,
+    config: &Config,
+    runtime: &Arc<RwLock<RuntimeSettings>>,
+) -> DownloadResult {
     match download::download_video(&request.video_id, &request.url, config).await {
         Ok(output) => {
             let size = download::get_file_size(&output.file_path).unwrap_or(0);
-            info!("Downloaded {} — {} bytes", request.video_id, size);
+            let max_size = runtime.read().await.max_filesize_bytes;
+            if size > max_size {
+                let _ = std::fs::remove_file(&output.file_path);
+                return DownloadResult::failure(
+                    request,
+                    format!(
+                        "downloaded file is {} bytes, over configured limit of {} bytes",
+                        size, max_size
+                    ),
+                );
+            }
+            info!("downloaded {} ({} bytes)", request.video_id, size);
             let mut result = DownloadResult::success(request, output.file_path, size);
-
-            // Enrich with yt-dlp metadata when the request has placeholder values
-            // (e.g. admin DM downloads only have video_id as title)
-            let meta = output.metadata;
-            if let Some(t) = meta.title {
+            let m = output.metadata;
+            if let Some(t) = m.title {
                 if request.title == request.video_id {
                     result.title = t;
                 }
             }
             if request.channel.is_none() {
-                result.channel = meta.channel;
+                result.channel = m.channel;
             }
             if request.channel_id.is_none() {
-                result.channel_id = meta.channel_id;
+                result.channel_id = m.channel_id;
             }
             if request.duration.is_none() {
-                result.duration = meta.duration;
+                result.duration = m.duration;
             }
             if request.thumbnail.is_none() {
-                result.thumbnail = meta.thumbnail;
+                result.thumbnail = m.thumbnail;
             }
-
             result
         }
         Err(e) => {
-            error!("Download failed for {}: {}", request.video_id, e);
+            error!("download failed for {}: {e}", request.video_id);
             DownloadResult::failure(request, e.to_string())
         }
     }

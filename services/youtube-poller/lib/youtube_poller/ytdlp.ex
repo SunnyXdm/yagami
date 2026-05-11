@@ -33,8 +33,6 @@ defmodule YoutubePoller.Ytdlp do
       "-j",
       "--cookies", cookies_path,
       "--playlist-end", "50",
-      "--js-runtimes", "node",
-      "--remote-components", "ejs:github",
       "https://www.youtube.com/feed/history"
     ]
 

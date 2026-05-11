@@ -1,12 +1,4 @@
-// Package main — entry point for the API Gateway.
-//
-// LEARNING (Go):
-//   - Every Go program starts with package main + func main().
-//   - Go has NO exceptions. Errors are returned as values:
-//     result, err := doSomething()
-//     if err != nil { handle it }
-//   - log/slog is Go's structured logging (added in Go 1.21).
-//   - os.Signal + context for graceful shutdown is idiomatic Go.
+// Package main — Yagami API Gateway entrypoint.
 package main
 
 import (
@@ -15,66 +7,107 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"yagami/api-gateway/internal/handlers"
+	natsx "yagami/api-gateway/internal/nats"
+	"yagami/api-gateway/internal/server"
 	"yagami/api-gateway/internal/store"
+	yagamilog "yagami/api-gateway/internal/ylog"
 )
 
 func main() {
-	// ── Structured logging ──────────────────────────────────
-	// LEARNING: slog outputs JSON logs by default when using NewJSONHandler.
-	// Every log entry has structured key-value pairs instead of free-form text.
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	// ── Database ────────────────────────────────────────────
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		slog.Error("DATABASE_URL is required")
-		os.Exit(1)
-	}
+	dbURL := getenv("DATABASE_URL", "postgres://yagami:yagami@postgres:5432/yagami")
+	natsURL := getenv("NATS_URL", "nats://nats:4222")
 
-	db, err := store.New(context.Background(), dbURL)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	st, err := store.New(ctx, dbURL)
 	if err != nil {
-		slog.Error("failed to connect to database", "error", err)
+		slog.Error("db connect failed", "error", err)
 		os.Exit(1)
 	}
-	defer db.Close()
+	defer st.Close()
 	slog.Info("database connected")
 
-	// ── HTTP routes ─────────────────────────────────────────
-	// LEARNING: Go 1.22 added method-based routing to the stdlib.
-	// Before 1.22, you needed a third-party router (chi, gorilla/mux).
-	// Now "GET /path" patterns work natively with http.NewServeMux().
-	h := handlers.New(db)
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", h.Health)
-	mux.HandleFunc("GET /api/events", h.ListEvents)
-	mux.HandleFunc("GET /api/stats", h.Stats)
+	nc, js, err := natsx.Connect(natsURL)
+	if err != nil {
+		slog.Error("nats connect failed", "error", err)
+		os.Exit(1)
+	}
+	defer nc.Drain() //nolint:errcheck
+	slog.Info("nats connected", "url", natsURL)
 
-	// ── Server + graceful shutdown ──────────────────────────
-	addr := ":8080"
-	srv := &http.Server{Addr: addr, Handler: mux}
+	if err := natsx.EnsureStreams(js); err != nil {
+		slog.Error("jetstream ensure streams failed", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("jetstream streams ready")
 
-	// LEARNING: Goroutines are lightweight threads managed by the Go runtime.
-	// go func() { ... }() spawns a new goroutine. Here we use one to listen
-	// for SIGINT (Ctrl-C) and gracefully shut down the HTTP server.
+	// Background workers — log sink, heartbeat sink, event fanout for SSE
+	bus := natsx.NewBus()
+	go natsx.RunLogSink(ctx, js, st)
+	go natsx.RunHeartbeatSink(ctx, js, st)
+	go natsx.RunEventFanout(ctx, js, bus)
+
+	// Publish our own logs to NATS (so we appear in the dashboard too)
+	yagamilog.Init(nc, "api-gateway")
+
+	// Self heartbeat so the api-gateway appears alive in the UI.
 	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, os.Interrupt)
-		<-sigCh // block until signal received
-
-		slog.Info("shutting down...")
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		srv.Shutdown(ctx)
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		publish := func() {
+			payload := []byte(`{"status":"ok","version":"1.0.0","service":"api-gateway"}`)
+			_ = nc.Publish("system.heartbeat", payload)
+		}
+		publish()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				publish()
+			}
+		}
 	}()
 
-	slog.Info("API Gateway listening", "addr", addr)
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+	h := handlers.New(st, nc, js, bus)
+	srv := server.New(h)
+
+	httpSrv := &http.Server{
+		Addr:              ":8080",
+		Handler:           srv,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	go func() {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+		<-sig
+		slog.Info("shutting down...")
+		cancel()
+		shutdownCtx, c := context.WithTimeout(context.Background(), 5*time.Second)
+		defer c()
+		_ = httpSrv.Shutdown(shutdownCtx)
+	}()
+
+	slog.Info("API Gateway listening", "addr", ":8080")
+	if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("server error", "error", err)
 		os.Exit(1)
 	}
-	slog.Info("goodbye")
+}
+
+func getenv(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
 }

@@ -1,3 +1,10 @@
+# Runtime config for the youtube-poller. Only the bare minimum env vars
+# remain — everything else lives in the `settings` Postgres table and is
+# editable via the web UI.
+import Config
+
+config :youtube_poller,
+  cookies_path: System.get_env("COOKIES_PATH", "/cookies/cookies.txt")
 # LEARNING: runtime.exs runs at APPLICATION START, so env vars are available.
 # This is where you read System.get_env/1.
 import Config

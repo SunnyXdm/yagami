@@ -97,7 +97,8 @@ mod tests {
 
     #[test]
     fn test_download_request_deserialize() {
-        let json = r#"{"video_id":"abc123","title":"Test","url":"https://youtube.com/watch?v=abc123"}"#;
+        let json =
+            r#"{"video_id":"abc123","title":"Test","url":"https://youtube.com/watch?v=abc123"}"#;
         let req: DownloadRequest = serde_json::from_str(json).unwrap();
         assert_eq!(req.video_id, "abc123");
         assert_eq!(req.title, "Test");

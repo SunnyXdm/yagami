@@ -1,72 +1,90 @@
 defmodule YoutubePoller.OAuth do
   @moduledoc """
-  Google OAuth2 token management.
+  Google OAuth2 token management — DB only.
 
-  Tokens are stored in the database. This module checks expiry and refreshes
-  when needed. The initial token is obtained via scripts/oauth-setup.py.
-
-  LEARNING: Pattern matching in function heads — Elixir picks the first
-  function clause whose pattern matches the arguments. This replaces
-  if/else chains and makes code very declarative.
+  When Google rejects the refresh (`invalid_grant`, typical after the 7-day
+  Testing-mode expiry), we mark the auth as broken in `settings.google.auth_status`
+  so the web UI can prompt the user to re-authorize. Error bodies are logged.
   """
   require Logger
 
   @google_token_url "https://oauth2.googleapis.com/token"
 
-  @doc "Get a valid access token, refreshing if expired."
   def get_token do
-    # Try env var first (simpler), fall back to database
-    case get_refresh_token() do
-      {:ok, refresh_token} ->
-        # With env-based refresh token, we always refresh on demand.
-        # A process-level cache could be added later.
-        refresh(refresh_token)
+    case YoutubePoller.DB.get_oauth_token() do
+      {:ok, access, _refresh, expires_at} when is_binary(access) and not is_nil(expires_at) ->
+        if token_valid?(expires_at), do: {:ok, access}, else: do_refresh()
+      _ ->
+        do_refresh()
+    end
+  end
 
+  def token_valid?(nil), do: false
+  def token_valid?(expires_at) do
+    buffer = DateTime.add(DateTime.utc_now(), 300, :second)
+    DateTime.compare(expires_at, buffer) == :gt
+  end
+
+  defp do_refresh do
+    case refresh_token_value() do
+      {:ok, rt} -> refresh(rt)
       {:error, :no_token} ->
-        Logger.error("No OAuth token found. Set GOOGLE_REFRESH_TOKEN in .env or run scripts/oauth-setup.py")
+        YoutubePoller.DB.set_setting("google.auth_status", "missing")
+        Logger.error("No Google refresh token. Authorize via the web UI.")
         {:error, :no_token}
     end
   end
 
-  defp get_refresh_token do
-    case Application.get_env(:youtube_poller, :google_refresh_token) do
-      token when is_binary(token) and token != "" ->
-        {:ok, token}
-
+  defp refresh_token_value do
+    case YoutubePoller.DB.get_oauth_token() do
+      {:ok, _a, refresh, _e} when is_binary(refresh) and refresh != "" -> {:ok, refresh}
       _ ->
-        # Fall back to database
-        case YoutubePoller.DB.get_oauth_token() do
-          {:ok, _access, refresh, _expires} -> {:ok, refresh}
-          error -> error
+        case YoutubePoller.Settings.get("google.refresh_token") do
+          v when is_binary(v) and v != "" -> {:ok, v}
+          _ -> {:error, :no_token}
         end
     end
   end
 
-  @doc "Exchange a refresh token for a new access token."
   def refresh(refresh_token) do
-    client_id = Application.get_env(:youtube_poller, :google_client_id)
-    client_secret = Application.get_env(:youtube_poller, :google_client_secret)
+    cid = YoutubePoller.Settings.get("google.client_id")
+    cs  = YoutubePoller.Settings.get("google.client_secret")
 
-    body = %{
-      client_id: client_id,
-      client_secret: client_secret,
-      refresh_token: refresh_token,
-      grant_type: "refresh_token"
-    }
+    cond do
+      is_nil(cid) or cid == "" -> {:error, :no_client_id}
+      is_nil(cs)  or cs  == "" -> {:error, :no_client_secret}
+      true -> do_refresh_request(cid, cs, refresh_token)
+    end
+  end
+
+  defp do_refresh_request(cid, cs, rt) do
+    body = %{client_id: cid, client_secret: cs, refresh_token: rt, grant_type: "refresh_token"}
 
     case Req.post(@google_token_url, form: body) do
-      {:ok, %{status: 200, body: %{"access_token" => token, "expires_in" => expires_in}}} ->
+      {:ok, %{status: 200, body: %{"access_token" => token, "expires_in" => expires_in} = resp}} ->
         expires_at = DateTime.add(DateTime.utc_now(), expires_in, :second)
-        YoutubePoller.DB.update_access_token(token, expires_at)
-        Logger.info("Refreshed OAuth access token")
+        new_rt = Map.get(resp, "refresh_token", rt)
+        YoutubePoller.DB.upsert_oauth_token("google", token, new_rt, expires_at)
+        if new_rt != rt, do: YoutubePoller.DB.set_setting("google.refresh_token", new_rt)
+        YoutubePoller.DB.set_setting("google.auth_status", "ok")
+        Logger.info("Refreshed Google access token (expires in #{expires_in}s)")
         {:ok, token}
 
+      {:ok, %{status: 400, body: %{"error" => "invalid_grant"} = body}} ->
+        Logger.error("Google rejected refresh token (invalid_grant): #{inspect(body)}")
+        YoutubePoller.DB.set_setting("google.auth_status", "invalid_grant")
+        YoutubePoller.NatsClient.publish_debug(
+          "❌ Google refresh failed: invalid_grant. Open the web UI → Settings → Google → Re-authorize."
+        )
+        {:error, :invalid_grant}
+
       {:ok, %{status: status, body: body}} ->
-        Logger.error("Token refresh failed: #{status} — #{inspect(body)}")
-        {:error, :refresh_failed}
+        Logger.error("Google refresh failed HTTP #{status}: #{inspect(body)}")
+        YoutubePoller.DB.set_setting("google.auth_status", "error_#{status}")
+        {:error, {:http, status, body}}
 
       {:error, reason} ->
-        Logger.error("Token refresh request failed: #{inspect(reason)}")
+        Logger.error("Google refresh transport error: #{inspect(reason)}")
         {:error, reason}
     end
   end

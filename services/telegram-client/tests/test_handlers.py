@@ -200,6 +200,34 @@ class TestHandleDownloadComplete:
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
 
+
+    @pytest.mark.asyncio
+    async def test_upload_failure_sends_error_and_preserves_file(self, mock_tg):
+        """When upload raises, an error message is sent and the source file is NOT deleted."""
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"video" * 100)
+            temp_path = f.name
+
+        try:
+            mock_tg.send_file.side_effect = RuntimeError("network timeout")
+            data = {
+                "video_id": "v_fail",
+                "title": "Fail Upload",
+                "success": True,
+                "file_path": temp_path,
+            }
+            await handle_download_complete(mock_tg, -100111, data)
+
+            # Error notification must have been sent
+            mock_tg.send_message.assert_called_once()
+            assert "\u274c Upload failed" in mock_tg.send_message.call_args[0][1]
+
+            # Original file must NOT be deleted
+            assert os.path.exists(temp_path), "Source file must be preserved on upload failure"
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
     @pytest.mark.asyncio
     async def test_failed_download_goes_to_requester(self, mock_tg):
         """Error messages also go to the requester for admin downloads."""
@@ -299,3 +327,21 @@ class TestSafeRemove:
 
     def test_ignores_missing_file(self):
         _safe_remove("/nonexistent/file.tmp")  # Should not raise
+
+
+
+class TestSplitVideo:
+    @patch("telegram_client.handlers.subprocess.run")
+    def test_split_video_raises_on_empty_duration(self, mock_run):
+        """split_video must raise when ffprobe returns empty stdout."""
+        mock_run.return_value = MagicMock(stdout="", returncode=0)
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"x")
+            path = f.name
+        try:
+            with patch("telegram_client.handlers.os.path.getsize", return_value=4_000_000_000):
+                with pytest.raises((RuntimeError, ValueError)):
+                    split_video(path)
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
