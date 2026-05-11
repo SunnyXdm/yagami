@@ -83,9 +83,17 @@ defmodule YoutubePoller.DB do
   end
 
   # Known subs
-  def get_known_sub_ids do
-    {:ok, %{rows: rows}} = query("SELECT channel_id FROM known_subscriptions", [])
-    MapSet.new(rows, fn [id] -> id end)
+  def get_known_subscriptions do
+    {:ok, %{rows: rows}} = query("SELECT channel_id, channel_title, thumbnail_url FROM known_subscriptions", [])
+
+    Map.new(rows, fn [channel_id, channel_title, thumbnail_url] ->
+      {channel_id,
+       %{
+         channel_id: channel_id,
+         channel_title: channel_title,
+         thumbnail: thumbnail_url
+       }}
+    end)
   end
 
   def insert_known_sub(channel_id, title, thumb) do

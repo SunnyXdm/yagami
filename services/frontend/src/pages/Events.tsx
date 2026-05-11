@@ -39,7 +39,8 @@ export function EventsPage() {
           <option value="">all events</option>
           <option value="like">likes</option>
           <option value="watch">watches</option>
-          <option value="subscribe">subscriptions</option>
+          <option value="subscribe">subscribed</option>
+          <option value="unsubscribe">unsubscribed</option>
         </select>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -48,29 +49,70 @@ export function EventsPage() {
             No activity yet. Once the YouTube poller runs, your likes and watches will land here.
           </div>
         )}
-        {(data || []).map((e) => (
-          <a key={e.id}
-             href={e.video_id ? `https://www.youtube.com/watch?v=${e.video_id}` : "#"}
-             target="_blank" rel="noreferrer"
-             className="flex gap-3 bg-panel/60 border border-border rounded-xl p-3 hover:border-accent2/60 transition group">
-            {e.thumbnail_url ? (
-              <img src={e.thumbnail_url} className="w-32 aspect-video object-cover rounded-md flex-shrink-0" alt="" />
-            ) : (
-              <div className="w-32 aspect-video bg-bg rounded-md flex-shrink-0" />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 mb-1">
-                <TypeBadge t={e.event_type} />
-                <span className="text-xs text-muted">{formatRelative(e.created_at)}</span>
+        {(data || []).map((e) => {
+          const href = eventHref(e);
+          const content = (
+            <>
+              {e.thumbnail_url ? (
+                <img src={e.thumbnail_url} className="w-32 aspect-video object-cover rounded-md flex-shrink-0" alt="" />
+              ) : (
+                <div className="w-32 aspect-video bg-bg rounded-md flex-shrink-0" />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <TypeBadge t={e.event_type} />
+                  <span className="text-xs text-muted">{formatRelative(e.created_at)}</span>
+                </div>
+                <div className="text-sm font-medium line-clamp-2 group-hover:text-accent2 transition">{eventTitle(e)}</div>
+                <div className="text-xs text-muted truncate mt-1">{eventSubtitle(e)}</div>
               </div>
-              <div className="text-sm font-medium line-clamp-2 group-hover:text-accent2 transition">{e.title || "(untitled)"}</div>
-              <div className="text-xs text-muted truncate mt-1">{e.channel_title || "—"}</div>
-            </div>
-          </a>
-        ))}
+            </>
+          );
+
+          if (!href) {
+            return (
+              <div key={e.id} className="flex gap-3 bg-panel/60 border border-border rounded-xl p-3">
+                {content}
+              </div>
+            );
+          }
+
+          return (
+            <a key={e.id}
+               href={href}
+               target="_blank" rel="noreferrer"
+               className="flex gap-3 bg-panel/60 border border-border rounded-xl p-3 hover:border-accent2/60 transition group">
+              {content}
+            </a>
+          );
+        })}
       </div>
     </div>
   );
+}
+
+function eventHref(e: Event) {
+  if (e.video_id) {
+    return `https://www.youtube.com/watch?v=${e.video_id}`;
+  }
+  if (e.channel_id) {
+    return `https://www.youtube.com/channel/${e.channel_id}`;
+  }
+  return null;
+}
+
+function eventTitle(e: Event) {
+  if (e.event_type === "subscribe" || e.event_type === "unsubscribe") {
+    return e.channel_title || e.title || e.channel_id || "(untitled)";
+  }
+  return e.title || e.channel_title || e.channel_id || "(untitled)";
+}
+
+function eventSubtitle(e: Event) {
+  if (e.event_type === "subscribe" || e.event_type === "unsubscribe") {
+    return e.channel_id || "—";
+  }
+  return e.channel_title || e.channel_id || "—";
 }
 
 function TypeBadge({ t }: { t: string }) {

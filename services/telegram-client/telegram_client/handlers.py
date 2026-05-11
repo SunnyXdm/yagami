@@ -38,6 +38,8 @@ except ImportError:  # pragma: no cover - lets pure unit tests run without Telet
 from .config import Config
 from .formatter import (
     format_like,
+    format_subscribe,
+    format_unsubscribe,
     format_video_caption,
     format_watch,
 )
@@ -66,6 +68,16 @@ async def handle_event(
         text = format_like(data)
         await tg.send_message(chat_id, text, link_preview=True)
         log.info("Sent like notification: %s", data.get("title"))
+
+    elif subject == "youtube.subscribe":
+        text = format_subscribe(data)
+        await tg.send_message(chat_id, text, link_preview=True)
+        log.info("Sent subscribe notification: %s", data.get("channel_title") or data.get("channel_id"))
+
+    elif subject == "youtube.unsubscribe":
+        text = format_unsubscribe(data)
+        await tg.send_message(chat_id, text, link_preview=True)
+        log.info("Sent unsubscribe notification: %s", data.get("channel_title") or data.get("channel_id"))
 
     elif subject == "download.complete":
         await handle_download_complete(tg, chat_id, data)
@@ -123,6 +135,7 @@ async def handle_download_complete(
     video_attrs = _make_video_attributes(video_id, video_w, video_h, duration_secs)
 
     upload_succeeded = False
+    part_paths: list[str] = []
     try:
         if file_size <= MAX_UPLOAD_BYTES:
             # Single file upload
@@ -140,6 +153,7 @@ async def handle_download_complete(
         else:
             # Split and upload in parts
             parts = split_video(file_path)
+            part_paths = list(parts)
             total = len(parts)
             log.info("File too large (%.1f MB), split into %d parts", file_size_mb, total)
 
@@ -173,6 +187,8 @@ async def handle_download_complete(
         except Exception:
             log.exception("Failed to send upload error notification for %s", video_id)
     finally:
+        for part_path in part_paths:
+            _safe_remove(part_path)
         if upload_succeeded:
             _safe_remove(file_path)
         _safe_remove(thumb_path)
@@ -325,25 +341,15 @@ def split_video(file_path: str) -> list[str]:
     Splits by time segments calculated from file size ratio.
     """
     file_size = os.path.getsize(file_path)
-    num_parts = math.ceil(file_size / MAX_UPLOAD_BYTES)
+    if file_size <= MAX_UPLOAD_BYTES:
+        return [file_path]
 
-    # Get video duration via ffprobe
-    result = subprocess.run(
-        [
-            "ffprobe", "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            file_path,
-        ],
-        capture_output=True,
-        text=True,
-    )
-    stdout = result.stdout.strip()
-    if not stdout:
-        raise RuntimeError(f"ffprobe returned empty duration output for {file_path}")
-    duration = float(stdout)
-    if duration <= 0:
-        raise RuntimeError(f"ffprobe returned non-positive duration {duration!r} for {file_path}")
+    duration = _probe_duration_seconds(file_path)
+    return _split_video_parts(file_path, file_size, duration)
+
+
+def _split_video_parts(file_path: str, file_size: int, duration: float) -> list[str]:
+    num_parts = math.ceil(file_size / MAX_UPLOAD_BYTES)
     segment_duration = duration / num_parts
 
     parts = []
@@ -351,7 +357,7 @@ def split_video(file_path: str) -> list[str]:
         part_path = f"{file_path}.part{i + 1}.mp4"
         start = i * segment_duration
 
-        subprocess.run(
+        result = subprocess.run(
             [
                 "ffmpeg", "-y",
                 "-ss", str(start),
@@ -362,11 +368,53 @@ def split_video(file_path: str) -> list[str]:
                 part_path,
             ],
             capture_output=True,
+            text=True,
         )
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg failed while splitting {file_path}: {result.stderr.strip() or 'unknown error'}")
+        if not os.path.exists(part_path):
+            raise RuntimeError(f"ffmpeg did not produce split output {part_path}")
+
+        part_size = os.path.getsize(part_path)
+        if part_size <= 0:
+            raise RuntimeError(f"ffmpeg produced an empty split output {part_path}")
+
+        if part_size > MAX_UPLOAD_BYTES:
+            nested_duration = _probe_duration_seconds(part_path)
+            nested_parts = _split_video_parts(part_path, part_size, nested_duration)
+            _safe_remove(part_path)
+            parts.extend(nested_parts)
+            log.info("Resplit oversized part %d/%d: %s", i + 1, num_parts, part_path)
+            continue
+
         parts.append(part_path)
         log.info("Split part %d/%d: %s", i + 1, num_parts, part_path)
 
     return parts
+
+
+def _probe_duration_seconds(file_path: str) -> float:
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            file_path,
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe failed for {file_path}: {result.stderr.strip() or 'unknown error'}")
+
+    stdout = result.stdout.strip()
+    if not stdout:
+        raise RuntimeError(f"ffprobe returned empty duration output for {file_path}")
+
+    duration = float(stdout)
+    if duration <= 0:
+        raise RuntimeError(f"ffprobe returned non-positive duration {duration!r} for {file_path}")
+    return duration
 
 
 def _safe_remove(path: str | None) -> None:

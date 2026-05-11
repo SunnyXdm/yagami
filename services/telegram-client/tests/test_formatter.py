@@ -5,6 +5,8 @@ import pytest
 from telegram_client.formatter import (
     format_duration,
     format_like,
+    format_subscribe,
+    format_unsubscribe,
     format_video_caption,
     format_views,
     format_watch,
@@ -97,6 +99,15 @@ class TestFormatWatch:
         assert "My Video" in result
         assert "Unknown" in result  # missing channel
 
+    def test_escapes_markdown_sensitive_text(self):
+        result = format_watch({
+            "title": "Look [here]",
+            "channel": "ch_name",
+            "video_id": "abc123",
+        })
+        assert "Look \\[here\\]" in result
+        assert "ch\\_name" in result
+
 
 # ── format_like ──────────────────────────────────────────────
 
@@ -118,6 +129,19 @@ class TestFormatLike:
         result = format_like({})
         assert "`Liked`" in result
         assert "Unknown" in result
+
+
+class TestSubscriptionFormatting:
+    def test_subscribe_uses_channel_title_and_link(self):
+        result = format_subscribe({"channel_title": "Cool Channel", "channel_id": "UC123"})
+        assert "`Subscribed`" in result
+        assert "Cool Channel" in result
+        assert "youtube.com/channel/UC123" in result
+
+    def test_unsubscribe_falls_back_to_title_when_channel_missing(self):
+        result = format_unsubscribe({"title": "Legacy Channel", "channel_id": "UC999"})
+        assert "Legacy Channel" in result
+        assert "UC999" in result
 
 
 # ── format_video_caption ─────────────────────────────────────
@@ -149,7 +173,7 @@ class TestFormatVideoCaption:
     def test_part_numbering(self):
         data = {"title": "Big Video", "channel": "Ch", "duration": "1:00:00"}
         result = format_video_caption(data, part=1, total=3)
-        assert "(Part 1/3)" in result
+        assert "[Part 1/3]" in result
 
     def test_single_part_no_label(self):
         data = {"title": "Small Video", "channel": "Ch", "duration": "5:00"}

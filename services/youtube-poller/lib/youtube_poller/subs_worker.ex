@@ -28,10 +28,11 @@ defmodule YoutubePoller.SubsWorker do
 
     with {:ok, token} <- YoutubePoller.OAuth.get_token(),
          {:ok, subs} <- YoutubePoller.YoutubeApi.list_subscriptions(token) do
-      known = YoutubePoller.DB.get_known_sub_ids()
+      known = YoutubePoller.DB.get_known_subscriptions()
+      known_ids = Map.keys(known) |> MapSet.new()
       current = MapSet.new(subs, & &1.channel_id)
-      new_subs = Enum.reject(subs, &MapSet.member?(known, &1.channel_id))
-      removed = MapSet.difference(known, current) |> MapSet.to_list()
+      new_subs = Enum.reject(subs, &MapSet.member?(known_ids, &1.channel_id))
+      removed = MapSet.difference(known_ids, current) |> MapSet.to_list()
 
       cond do
         not seeded ->
@@ -48,10 +49,11 @@ defmodule YoutubePoller.SubsWorker do
           end
 
           for cid <- removed do
-            YoutubePoller.NatsClient.publish("youtube.unsubscribe", %{channel_id: cid})
+            sub = Map.get(known, cid, %{channel_id: cid})
+            YoutubePoller.NatsClient.publish("youtube.unsubscribe", sub)
             YoutubePoller.DB.delete_known_sub(cid)
-            YoutubePoller.DB.insert_event("unsubscribe", %{channel_id: cid})
-            Logger.info("Unsubscribed: #{cid}")
+            YoutubePoller.DB.insert_event("unsubscribe", sub)
+            Logger.info("Unsubscribed: #{sub.channel_title || cid}")
           end
       end
     else

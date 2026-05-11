@@ -72,6 +72,24 @@ class TestHandleEvent:
         assert "`Liked`" in msg
 
     @pytest.mark.asyncio
+    async def test_subscribe_event(self, mock_tg, config):
+        data = {"channel_title": "New Channel", "channel_id": "UC123"}
+        await handle_event(mock_tg, "youtube.subscribe", -100555, data, config)
+        mock_tg.send_message.assert_called_once()
+        msg = mock_tg.send_message.call_args[0][1]
+        assert "`Subscribed`" in msg
+        assert "New Channel" in msg
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_event(self, mock_tg, config):
+        data = {"channel_title": "Old Channel", "channel_id": "UC999"}
+        await handle_event(mock_tg, "youtube.unsubscribe", -100555, data, config)
+        mock_tg.send_message.assert_called_once()
+        msg = mock_tg.send_message.call_args[0][1]
+        assert "`Unsubscribed`" in msg
+        assert "Old Channel" in msg
+
+    @pytest.mark.asyncio
     async def test_download_complete_routes_correctly(self, mock_tg, config):
         data = {"video_id": "vid1", "success": False, "error": "too large"}
         await handle_event(mock_tg, "download.complete", -100111, data, config)
@@ -345,3 +363,61 @@ class TestSplitVideo:
         finally:
             if os.path.exists(path):
                 os.unlink(path)
+
+    @patch("telegram_client.handlers.subprocess.run")
+    def test_split_video_raises_on_ffmpeg_failure(self, mock_run):
+        mock_run.side_effect = [
+            MagicMock(stdout="120\n", stderr="", returncode=0),
+            MagicMock(stdout="", stderr="mux failed", returncode=1),
+        ]
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"x")
+            path = f.name
+        try:
+            with patch("telegram_client.handlers.os.path.getsize", return_value=4_000_000_000):
+                with pytest.raises(RuntimeError, match="ffmpeg failed"):
+                    split_video(path)
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
+    @patch("telegram_client.handlers.subprocess.run")
+    def test_split_video_resplits_oversized_parts(self, mock_run):
+        def fake_run(args, **kwargs):
+            if args[0] == "ffprobe":
+                return MagicMock(stdout="120\n", stderr="", returncode=0)
+            if args[0] == "ffmpeg":
+                with open(args[-1], "wb") as handle:
+                    handle.write(b"part")
+                return MagicMock(stdout="", stderr="", returncode=0)
+            raise AssertionError(f"unexpected command: {args}")
+
+        mock_run.side_effect = fake_run
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"x")
+            path = f.name
+
+        initial_part = f"{path}.part1.mp4"
+        nested_part_1 = f"{initial_part}.part1.mp4"
+        nested_part_2 = f"{initial_part}.part2.mp4"
+        second_part = f"{path}.part2.mp4"
+
+        size_map = {
+            path: 3_800_000_000,
+            initial_part: 2_100_000_000,
+            nested_part_1: 1_050_000_000,
+            nested_part_2: 1_050_000_000,
+            second_part: 1_700_000_000,
+        }
+
+        try:
+            with patch("telegram_client.handlers.os.path.getsize", side_effect=lambda p: size_map[p]):
+                parts = split_video(path)
+
+            assert parts == [nested_part_1, nested_part_2, second_part]
+            assert not os.path.exists(initial_part)
+        finally:
+            for candidate in [path, initial_part, nested_part_1, nested_part_2, second_part]:
+                if os.path.exists(candidate):
+                    os.unlink(candidate)

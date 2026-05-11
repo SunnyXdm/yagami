@@ -11,6 +11,9 @@ LEARNING (Python):
 from __future__ import annotations
 
 
+MD_SPECIALS = "\\`*_[]()"
+
+
 def format_duration(seconds: int | None) -> str:
     """Convert seconds → 'HH:MM:SS' or 'MM:SS'."""
     if not seconds:
@@ -33,12 +36,13 @@ def format_views(count: int | None) -> str:
 
 def format_watch(data: dict) -> str:
     video_id = data.get('video_id', '')
-    title = data.get('title', 'Unknown')
-    channel = _channel(data)
-    duration = data.get("duration") or format_duration(data.get("duration_seconds"))
+    title = _escape_md(data.get('title', 'Unknown'))
+    channel = _escape_md(_channel(data))
+    duration = _escape_md(data.get("duration") or format_duration(data.get("duration_seconds")))
+    video = _markdown_link(title, _youtube_video_url(video_id))
     return (
         f"`Watched`\n\n"
-        f"[{title}](https://youtube.com/watch?v={video_id})\n\n"
+        f"{video}\n\n"
         f"`Channel:` {channel}\n"
         f"`Duration:` {duration}"
     )
@@ -46,26 +50,74 @@ def format_watch(data: dict) -> str:
 
 def format_like(data: dict) -> str:
     video_id = data.get('video_id', '')
-    title = data.get('title', 'Unknown')
-    channel = _channel(data)
-    duration = data.get("duration") or format_duration(data.get("duration_seconds"))
+    title = _escape_md(data.get('title', 'Unknown'))
+    channel = _escape_md(_channel(data))
+    duration = _escape_md(data.get("duration") or format_duration(data.get("duration_seconds")))
+    video = _markdown_link(title, _youtube_video_url(video_id))
     return (
         f"`Liked`\n\n"
-        f"[{title}](https://youtube.com/watch?v={video_id})\n\n"
+        f"{video}\n\n"
         f"`Channel:` {channel}\n"
         f"`Duration:` {duration}\n\n"
         f"`Downloading...`"
     )
 
 
+def format_subscribe(data: dict) -> str:
+    channel = _escape_md(_channel(data))
+    channel_id = _escape_md(data.get("channel_id") or "Unknown")
+    channel_ref = _markdown_link(channel, _youtube_channel_url(data.get("channel_id")))
+    return (
+        f"`Subscribed`\n\n"
+        f"{channel_ref}\n\n"
+        f"`Channel ID:` {channel_id}"
+    )
+
+
+def format_unsubscribe(data: dict) -> str:
+    channel = _escape_md(_channel(data))
+    channel_id = _escape_md(data.get("channel_id") or "Unknown")
+    channel_ref = _markdown_link(channel, _youtube_channel_url(data.get("channel_id")))
+    return (
+        f"`Unsubscribed`\n\n"
+        f"{channel_ref}\n\n"
+        f"`Channel ID:` {channel_id}"
+    )
+
+
 def format_video_caption(data: dict, part: int | None = None, total: int | None = None) -> str:
-    duration = data.get("duration") or format_duration(data.get("duration_seconds"))
-    title = data.get("title", "Video")
-    channel = _channel(data)
-    suffix = f" (Part {part}/{total})" if part and total and total > 1 else ""
+    duration = _escape_md(data.get("duration") or format_duration(data.get("duration_seconds")))
+    title = _escape_md(data.get("title", "Video"))
+    channel = _escape_md(_channel(data))
+    suffix = f" [Part {part}/{total}]" if part and total and total > 1 else ""
     return f"{title} — {channel} ({duration}){suffix}"
 
 
 def _channel(data: dict) -> str:
     """Get channel name from either field name the poller might send."""
-    return data.get("channel_title") or data.get("channel") or "Unknown"
+    return data.get("channel_title") or data.get("channel") or data.get("title") or "Unknown"
+
+
+def _escape_md(value: object) -> str:
+    text = str(value)
+    for ch in MD_SPECIALS:
+        text = text.replace(ch, f"\\{ch}")
+    return text
+
+
+def _markdown_link(text: str, url: str | None) -> str:
+    if not url:
+        return text
+    return f"[{text}]({url})"
+
+
+def _youtube_video_url(video_id: str | None) -> str | None:
+    if not video_id:
+        return None
+    return f"https://youtube.com/watch?v={video_id}"
+
+
+def _youtube_channel_url(channel_id: str | None) -> str | None:
+    if not channel_id:
+        return None
+    return f"https://www.youtube.com/channel/{channel_id}"

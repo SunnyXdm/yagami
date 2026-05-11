@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "../lib/api";
 import { Header } from "./Dashboard";
@@ -10,12 +10,18 @@ interface LogEntry {
   message: string; fields?: any; error?: string | null;
 }
 
+const PAGE_SIZE = 100;
+const LOAD_MORE_OFFSET = 160;
+
 export function LogsPage() {
   const [services, setServices] = useState<string[]>([]);
   const [level, setLevel] = useState<string>("");
   const [q, setQ] = useState("");
   const [follow, setFollow] = useState(true);
-  const [tail, setTail] = useState<LogEntry[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
   const allServices = useQuery({
     queryKey: ["log-services"],
@@ -30,14 +36,41 @@ export function LogsPage() {
       if (services.length === 1) u.set("service", services[0]);
       if (level) u.set("level", level);
       if (q) u.set("q", q);
-      u.set("limit", "200");
+      u.set("limit", String(PAGE_SIZE));
       return apiGet<LogEntry[]>(`logs?${u.toString()}`);
     },
   });
 
   useEffect(() => {
-    if (initial.data) setTail(initial.data.slice().reverse());
+    if (!initial.data) return;
+    setLogs(initial.data);
+    setHasMore(initial.data.length === PAGE_SIZE);
+    if (listRef.current) {
+      listRef.current.scrollTop = 0;
+    }
   }, [initial.data]);
+
+  async function loadOlder() {
+    if (loadingMore || !hasMore || logs.length === 0) return;
+    const oldest = logs[logs.length - 1];
+    if (!oldest) return;
+
+    setLoadingMore(true);
+    try {
+      const u = new URLSearchParams();
+      if (services.length === 1) u.set("service", services[0]);
+      if (level) u.set("level", level);
+      if (q) u.set("q", q);
+      u.set("limit", String(PAGE_SIZE));
+      u.set("after_id", String(oldest.id));
+
+      const older = await apiGet<LogEntry[]>(`logs?${u.toString()}`);
+      setLogs((prev) => appendOlder(prev, older));
+      setHasMore(older.length === PAGE_SIZE);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   // SSE subscribe
   useEffect(() => {
@@ -49,7 +82,7 @@ export function LogsPage() {
         // logs.<service> arrives via systemBus too; but our SSE streams events.
         // The api-gateway also forwards logs over SSE under topic logs.<svc>.
         if (typeof e?.message === "string") {
-          setTail((prev) => filterAndPush(prev, e, services, level, q));
+          setLogs((prev) => prependLog(prev, e, services, level, q));
         }
       } catch {}
     };
@@ -59,13 +92,23 @@ export function LogsPage() {
   }, [follow, services.join(","), level, q]);
 
   const filtered = useMemo(() => {
-    return tail.filter((e) => {
+    return logs.filter((e) => {
       if (services.length && !services.includes(e.service)) return false;
       if (level && e.level !== level) return false;
       if (q && !e.message.toLowerCase().includes(q.toLowerCase())) return false;
       return true;
     });
-  }, [tail, services.join(","), level, q]);
+  }, [logs, services.join(","), level, q]);
+
+  function handleScroll(event: React.UIEvent<HTMLDivElement>) {
+    const next = event.currentTarget;
+    if (follow && next.scrollTop > 48) {
+      setFollow(false);
+    }
+    if (next.scrollTop + next.clientHeight >= next.scrollHeight - LOAD_MORE_OFFSET) {
+      void loadOlder();
+    }
+  }
 
   return (
     <div>
@@ -74,7 +117,15 @@ export function LogsPage() {
         subtitle="Live, structured logs from every service. Filter by service, level, or text."
         right={
           <button
-            onClick={() => setFollow((v) => !v)}
+            onClick={() => {
+              setFollow((value) => {
+                const next = !value;
+                if (next && listRef.current) {
+                  listRef.current.scrollTop = 0;
+                }
+                return next;
+              });
+            }}
             className={cn(
               "px-3 py-1.5 text-xs rounded-lg border border-border flex items-center gap-2",
               follow ? "bg-accent text-white" : "bg-panel"
@@ -125,12 +176,21 @@ export function LogsPage() {
         </div>
       </div>
 
-      <div className="bg-panel/40 border border-border rounded-xl overflow-x-auto">
+      <div
+        ref={listRef}
+        onScroll={handleScroll}
+        className="bg-panel/40 border border-border rounded-xl overflow-auto max-h-[70vh]"
+      >
         <div className="font-mono text-xs">
           {filtered.length === 0 ? (
             <div className="p-6 text-muted text-center">No logs match these filters yet.</div>
           ) : (
-            filtered.slice(-500).map((e, i) => <LogRow key={e.id ?? i} e={e} />)
+            filtered.map((e, i) => <LogRow key={e.id ?? i} e={e} />)
+          )}
+          {filtered.length > 0 && (
+            <div className="px-4 py-3 text-[11px] text-muted border-t border-border/30 text-center">
+              {loadingMore ? "Loading older logs..." : hasMore ? "Scroll down for older logs." : "You have reached the oldest loaded log."}
+            </div>
           )}
         </div>
       </div>
@@ -138,12 +198,26 @@ export function LogsPage() {
   );
 }
 
-function filterAndPush(prev: LogEntry[], e: LogEntry, services: string[], level: string, q: string) {
+function prependLog(prev: LogEntry[], e: LogEntry, services: string[], level: string, q: string) {
   if (services.length && !services.includes(e.service)) return prev;
   if (level && e.level !== level) return prev;
   if (q && !e.message.toLowerCase().includes(q.toLowerCase())) return prev;
-  const next = [...prev, e];
-  if (next.length > 1000) next.splice(0, next.length - 1000);
+  if (prev.some((entry) => entry.id === e.id)) return prev;
+  const next = [e, ...prev];
+  if (next.length > 2000) next.length = 2000;
+  return next;
+}
+
+function appendOlder(prev: LogEntry[], older: LogEntry[]) {
+  if (older.length === 0) return prev;
+  const seen = new Set(prev.map((entry) => entry.id));
+  const next = prev.slice();
+  for (const entry of older) {
+    if (!seen.has(entry.id)) {
+      next.push(entry);
+      seen.add(entry.id);
+    }
+  }
   return next;
 }
 
