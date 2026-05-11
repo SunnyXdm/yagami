@@ -6,6 +6,7 @@ defmodule YoutubePoller.SubsWorker do
   use GenServer
   require Logger
 
+  @subscriptions_api_soft_cap 1000
   @unsubscribe_confirmations 2
 
   def start_link(_), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
@@ -13,7 +14,7 @@ defmodule YoutubePoller.SubsWorker do
   @impl true
   def init(:ok) do
     Process.send_after(self(), :poll, 15_000)
-    {:ok, %{pending_unsubscribes: %{}}}
+    {:ok, %{pending_unsubscribes: %{}, snapshot_warning_sent: false}}
   end
 
   @impl true
@@ -33,35 +34,43 @@ defmodule YoutubePoller.SubsWorker do
       known = YoutubePoller.DB.get_known_subscriptions()
       known_ids = Map.keys(known) |> MapSet.new()
       current = MapSet.new(subs, & &1.channel_id)
-      new_subs = Enum.reject(subs, &MapSet.member?(known_ids, &1.channel_id))
-      removed = MapSet.difference(known_ids, current) |> MapSet.to_list()
+      case subscription_snapshot_issue(subs, current, known_ids) do
+        nil ->
+          state = maybe_clear_snapshot_warning(state)
+          new_subs = Enum.reject(subs, &MapSet.member?(known_ids, &1.channel_id))
+          removed = MapSet.difference(known_ids, current) |> MapSet.to_list()
 
-      cond do
-        not seeded ->
-          Logger.info("Seeding #{length(subs)} existing subscriptions silently")
-          for s <- subs, do: YoutubePoller.DB.insert_known_sub(s.channel_id, s.channel_title, s.thumbnail)
-          YoutubePoller.DB.mark_seeded!("seeded_subs")
-          %{state | pending_unsubscribes: %{}}
+          cond do
+            not seeded ->
+              Logger.info("Seeding #{length(subs)} existing subscriptions silently")
+              for s <- subs, do: YoutubePoller.DB.insert_known_sub(s.channel_id, s.channel_title, s.thumbnail)
+              YoutubePoller.DB.mark_seeded!("seeded_subs")
+              %{state | pending_unsubscribes: %{}}
 
-        true ->
-          for s <- new_subs do
-            YoutubePoller.NatsClient.publish("youtube.subscribe", s)
-            YoutubePoller.DB.insert_known_sub(s.channel_id, s.channel_title, s.thumbnail)
-            YoutubePoller.DB.insert_event("subscribe", s)
-            Logger.info("Subscribed: #{s.channel_title}")
+            true ->
+              for s <- new_subs do
+                YoutubePoller.NatsClient.publish("youtube.subscribe", s)
+                YoutubePoller.DB.insert_known_sub(s.channel_id, s.channel_title, s.thumbnail)
+                YoutubePoller.DB.insert_event("subscribe", s)
+                Logger.info("Subscribed: #{s.channel_title}")
+              end
+
+              {confirmed_removed, pending_unsubscribes} = confirm_removed(removed, state.pending_unsubscribes)
+
+              for cid <- confirmed_removed do
+                sub = Map.get(known, cid, %{channel_id: cid})
+                YoutubePoller.NatsClient.publish("youtube.unsubscribe", sub)
+                YoutubePoller.DB.delete_known_sub(cid)
+                YoutubePoller.DB.insert_event("unsubscribe", sub)
+                Logger.info("Unsubscribed: #{sub.channel_title || cid}")
+              end
+
+              %{state | pending_unsubscribes: pending_unsubscribes}
           end
 
-          {confirmed_removed, pending_unsubscribes} = confirm_removed(removed, state.pending_unsubscribes)
-
-          for cid <- confirmed_removed do
-            sub = Map.get(known, cid, %{channel_id: cid})
-            YoutubePoller.NatsClient.publish("youtube.unsubscribe", sub)
-            YoutubePoller.DB.delete_known_sub(cid)
-            YoutubePoller.DB.insert_event("unsubscribe", sub)
-            Logger.info("Unsubscribed: #{sub.channel_title || cid}")
-          end
-
-          %{state | pending_unsubscribes: pending_unsubscribes}
+        reason ->
+          warn_unstable_snapshot(reason, length(subs), MapSet.size(current), MapSet.size(known_ids), state.snapshot_warning_sent)
+          %{state | pending_unsubscribes: %{}, snapshot_warning_sent: true}
       end
     else
       {:error, reason} ->
@@ -69,6 +78,48 @@ defmodule YoutubePoller.SubsWorker do
         state
     end
   end
+
+  defp subscription_snapshot_issue(subs, current, known_ids) do
+    raw_count = length(subs)
+    unique_count = MapSet.size(current)
+    known_count = MapSet.size(known_ids)
+
+    cond do
+      raw_count != unique_count ->
+        "YouTube subscriptions.list returned duplicate channel IDs across pages"
+
+      raw_count >= @subscriptions_api_soft_cap and known_count > unique_count ->
+        "YouTube subscriptions.list appears capped before the full subscription set"
+
+      raw_count >= @subscriptions_api_soft_cap ->
+        "YouTube subscriptions.list reached the 1000-item safety cap, so the snapshot may be incomplete"
+
+      true ->
+        nil
+    end
+  end
+
+  defp warn_unstable_snapshot(reason, raw_count, unique_count, known_count, already_warned?) do
+    message =
+      "Skipping subscriptions diff because the upstream snapshot is not trustworthy: #{reason}. " <>
+        "received=#{raw_count}, unique=#{unique_count}, known=#{known_count}"
+
+    Logger.warning(message)
+
+    unless already_warned? do
+      YoutubePoller.NatsClient.publish_debug(
+        "⚠️ Subscription monitoring is paused because YouTube returned an incomplete or duplicate-filled subscriptions snapshot. " <>
+          "This commonly happens on large accounts near the 1000-subscription API ceiling."
+      )
+    end
+  end
+
+  defp maybe_clear_snapshot_warning(%{snapshot_warning_sent: true} = state) do
+    Logger.info("Subscription snapshot looks stable again; resuming diff processing")
+    %{state | snapshot_warning_sent: false}
+  end
+
+  defp maybe_clear_snapshot_warning(state), do: state
 
   defp confirm_removed(removed, pending_unsubscribes) do
     Enum.reduce(removed, {[], %{}}, fn cid, {confirmed, pending} ->
