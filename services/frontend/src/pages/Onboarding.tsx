@@ -268,6 +268,7 @@ function missingLabels(status?: SettingsStatus): string[] {
     telegram_chat_subs_set: settingLabel("telegram.chat_subs"),
     telegram_admin_set: settingLabel("telegram.admin_user_id"),
     youtube_cookies_set: settingLabel("youtube.cookies"),
+    youtube_cookies_file_ready: "Downloader cookie file",
   };
   return REQUIRED_STATUS_KEYS.filter((key) => !status?.[key]).map((key) => labels[key] || key);
 }
@@ -284,7 +285,7 @@ function sectionComplete(sectionId: string, status?: SettingsStatus): boolean {
       && !!status?.telegram_admin_set;
   }
   if (sectionId === "youtube-history") {
-    return !!status?.youtube_cookies_set;
+    return !!status?.youtube_cookies_set && !!status?.youtube_cookies_file_ready;
   }
   return false;
 }
@@ -296,6 +297,10 @@ function stepHint(sectionId: string, status?: SettingsStatus): string {
     return "Google is configured and authorized.";
   }
   if (sectionId === "telegram") return "Add the bot token and every destination chat ID.";
-  if (sectionId === "youtube-history") return "Paste cookies from a logged-in browser session.";
+  if (sectionId === "youtube-history") {
+    if (!status?.youtube_cookies_set) return "Paste cookies from a logged-in browser session.";
+    if (!status?.youtube_cookies_file_ready) return "Cookies are saved. Wait a few seconds for the downloader to sync its shared cookies file.";
+    return "Cookies are saved and synced to the downloader.";
+  }
   return "";
 }

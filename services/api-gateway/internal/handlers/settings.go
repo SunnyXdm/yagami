@@ -2,8 +2,11 @@ package handlers
 
 import (
 	"net/http"
+	"os"
 	"strings"
 )
+
+const defaultYoutubeCookiesPath = "/cookies/cookies.txt"
 
 // ListSettings returns all settings, masking secret values for non-admins.
 func (h *Handler) ListSettings(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +69,7 @@ func (h *Handler) SettingsStatus(w http.ResponseWriter, r *http.Request) {
 		m[x.Key] = x.Value
 	}
 	non := func(k string) bool { return m[k] != "" }
+	cookiesConfigured := hasUsableYouTubeCookies(m["youtube.cookies"])
 	authStatus := strings.TrimSpace(m["google.auth_status"])
 	oauthHealthy := non("google.refresh_token") &&
 		authStatus != "invalid_grant" &&
@@ -79,7 +83,31 @@ func (h *Handler) SettingsStatus(w http.ResponseWriter, r *http.Request) {
 		"telegram_chat_history_set": non("telegram.chat_history"),
 		"telegram_chat_subs_set":    non("telegram.chat_subs"),
 		"telegram_admin_set":        non("telegram.admin_user_id"),
-		"youtube_cookies_set":       non("youtube.cookies"),
+		"youtube_cookies_set":       cookiesConfigured,
+		"youtube_cookies_file_ready": hasUsableYouTubeCookiesFile(youtubeCookiesPath()),
 	}
 	writeJSON(w, http.StatusOK, status)
+}
+
+func youtubeCookiesPath() string {
+	if path := strings.TrimSpace(os.Getenv("COOKIES_PATH")); path != "" {
+		return path
+	}
+	return defaultYoutubeCookiesPath
+}
+
+func hasUsableYouTubeCookies(raw string) bool {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return false
+	}
+	return strings.Contains(trimmed, "youtube.com") && (strings.Contains(trimmed, "\t") || strings.Contains(trimmed, "# Netscape"))
+}
+
+func hasUsableYouTubeCookiesFile(path string) bool {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return hasUsableYouTubeCookies(string(raw))
 }

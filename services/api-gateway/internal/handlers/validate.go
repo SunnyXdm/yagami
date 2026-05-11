@@ -77,7 +77,7 @@ func validateSettings(ctx context.Context, kv map[string]string) map[string]stri
 			if vv == "" {
 				continue
 			}
-			if !strings.Contains(vv, "youtube.com") {
+			if !hasUsableYouTubeCookies(vv) {
 				errs[k] = "doesn't contain youtube.com — paste your Netscape cookies.txt"
 			}
 		case "poll.interval_likes", "poll.interval_history", "poll.interval_subs":
@@ -86,6 +86,18 @@ func validateSettings(ctx context.Context, kv map[string]string) map[string]stri
 			mustInt(k, 1, 16)
 		case "downloader.max_filesize_gb":
 			mustInt(k, 1, 50)
+		case "downloader.ytdlp_extractor_args":
+			vv := strings.TrimSpace(v)
+			if vv == "" {
+				continue
+			}
+			if len(vv) > 4000 {
+				errs[k] = "too long — keep extractor args under 4000 characters"
+				continue
+			}
+			if !strings.Contains(vv, ":") {
+				errs[k] = "must look like youtube:player_client=mweb;po_token=..."
+			}
 		}
 	}
 	return errs

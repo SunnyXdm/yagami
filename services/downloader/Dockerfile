@@ -14,7 +14,7 @@ RUN touch src/main.rs && cargo build --release
 # --- Runtime stage ---
 FROM alpine:3.19
 RUN apk add --no-cache python3 py3-pip ffmpeg ca-certificates nodejs \
-    && pip3 install --break-system-packages yt-dlp
+    && pip3 install --break-system-packages "yt-dlp[default]"
 
 COPY --from=builder /app/target/release/downloader /usr/local/bin/downloader
 

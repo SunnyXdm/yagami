@@ -50,7 +50,8 @@ INSERT INTO settings (key, description, is_secret) VALUES
     ('poll.interval_history',    'History poll interval (seconds)',       FALSE),
     ('poll.interval_subs',       'Subscriptions poll interval (seconds)', FALSE),
     ('downloader.max_concurrent','Max concurrent downloads',              FALSE),
-    ('downloader.max_filesize_gb','Max file size to download (GB)',       FALSE)
+    ('downloader.max_filesize_gb','Max file size to download (GB)',       FALSE),
+    ('downloader.ytdlp_extractor_args','Optional yt-dlp extractor args override for YouTube edge cases', TRUE)
 ON CONFLICT (key) DO NOTHING;
 
 UPDATE settings SET value='300' WHERE key='poll.interval_likes'      AND value='';

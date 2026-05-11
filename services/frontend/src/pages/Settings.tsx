@@ -221,6 +221,7 @@ function readinessItems(status?: SettingsStatus) {
     { label: settingLabel("telegram.chat_subs"), ok: !!status?.telegram_chat_subs_set },
     { label: settingLabel("telegram.admin_user_id"), ok: !!status?.telegram_admin_set },
     { label: settingLabel("youtube.cookies"), ok: !!status?.youtube_cookies_set },
+    { label: "Downloader cookie file", ok: !!status?.youtube_cookies_file_ready },
   ];
 }
 
@@ -237,6 +238,6 @@ function readyForSection(sectionId: string, status?: SettingsStatus): boolean {
       && !!status?.telegram_chat_subs_set
       && !!status?.telegram_admin_set;
   }
-  if (sectionId === "youtube-history") return !!status?.youtube_cookies_set;
+  if (sectionId === "youtube-history") return !!status?.youtube_cookies_set && !!status?.youtube_cookies_file_ready;
   return false;
 }

@@ -17,6 +17,7 @@ pub struct RuntimeSettings {
     pub max_concurrent: usize,
     pub max_filesize_bytes: u64,
     pub cookies: String,
+    pub ytdlp_extractor_args: String,
 }
 
 impl Default for RuntimeSettings {
@@ -25,6 +26,7 @@ impl Default for RuntimeSettings {
             max_concurrent: 3,
             max_filesize_bytes: 8 * 1024 * 1024 * 1024,
             cookies: String::new(),
+            ytdlp_extractor_args: String::new(),
         }
     }
 }
@@ -58,6 +60,10 @@ impl Db {
             max_concurrent,
             max_filesize_bytes: gb * 1024 * 1024 * 1024,
             cookies: map.get("youtube.cookies").cloned().unwrap_or_default(),
+            ytdlp_extractor_args: map
+                .get("downloader.ytdlp_extractor_args")
+                .cloned()
+                .unwrap_or_default(),
         })
     }
 
@@ -176,29 +182,72 @@ pub async fn run_settings_loop(
     let mut last_cookies_hash: u64 = 0;
     loop {
         match db.load_settings().await {
-            Ok(s) => {
-                let h = hash_str(&s.cookies);
-                if !s.cookies.is_empty() && h != last_cookies_hash {
-                    if let Some(parent) = Path::new(&cookies_path).parent() {
-                        let _ = tokio::fs::create_dir_all(parent).await;
-                    }
-                    match tokio::fs::write(&cookies_path, &s.cookies).await {
-                        Ok(_) => {
-                            info!(
-                                "wrote cookies to {cookies_path} ({} bytes)",
-                                s.cookies.len()
-                            );
-                            last_cookies_hash = h;
-                        }
-                        Err(e) => warn!("failed to write cookies: {e}"),
-                    }
-                }
-                *current.write().await = s;
-            }
+            Ok(s) => match apply_runtime_settings(&current, &cookies_path, s, &mut last_cookies_hash, false).await {
+                Ok(()) => {}
+                Err(e) => warn!("settings apply failed: {e}"),
+            },
             Err(e) => warn!("settings reload failed: {e}"),
         }
         tokio::time::sleep(std::time::Duration::from_secs(60)).await;
     }
+}
+
+pub async fn refresh_settings_now(
+    db: &Db,
+    current: &Arc<RwLock<RuntimeSettings>>,
+    cookies_path: &str,
+) -> Result<()> {
+    let settings = db.load_settings().await?;
+    let mut last_cookies_hash = hash_str(&settings.cookies);
+    apply_runtime_settings(current, cookies_path, settings, &mut last_cookies_hash, true).await
+}
+
+async fn apply_runtime_settings(
+    current: &Arc<RwLock<RuntimeSettings>>,
+    cookies_path: &str,
+    settings: RuntimeSettings,
+    last_cookies_hash: &mut u64,
+    force_cookie_sync: bool,
+) -> Result<()> {
+    sync_cookie_file(&settings.cookies, cookies_path, last_cookies_hash, force_cookie_sync).await?;
+    *current.write().await = settings;
+    Ok(())
+}
+
+async fn sync_cookie_file(
+    cookies: &str,
+    cookies_path: &str,
+    last_cookies_hash: &mut u64,
+    force_write: bool,
+) -> Result<()> {
+    let trimmed = cookies.trim();
+    if trimmed.is_empty() {
+        if Path::new(cookies_path).exists() {
+            tokio::fs::remove_file(cookies_path)
+                .await
+                .context("remove stale cookies file")?;
+            info!("removed stale cookies file at {cookies_path}");
+        }
+        *last_cookies_hash = 0;
+        return Ok(());
+    }
+
+    let next_hash = hash_str(cookies);
+    if !force_write && next_hash == *last_cookies_hash {
+        return Ok(());
+    }
+
+    if let Some(parent) = Path::new(cookies_path).parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .context("create cookies directory")?;
+    }
+    tokio::fs::write(cookies_path, cookies)
+        .await
+        .context("write cookies file")?;
+    info!("wrote cookies to {cookies_path} ({} bytes)", cookies.len());
+    *last_cookies_hash = next_hash;
+    Ok(())
 }
 
 fn hash_str(s: &str) -> u64 {
@@ -206,4 +255,39 @@ fn hash_str(s: &str) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     s.hash(&mut h);
     h.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_sync_cookie_file_writes_cookies() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cookies.txt");
+        let mut hash = 0;
+
+        sync_cookie_file(".youtube.com\tTRUE\t/\tTRUE\t0\tSID\tvalue", path.to_str().unwrap(), &mut hash, false)
+            .await
+            .unwrap();
+
+        let written = tokio::fs::read_to_string(&path).await.unwrap();
+        assert!(written.contains("SID"));
+        assert_ne!(hash, 0);
+    }
+
+    #[tokio::test]
+    async fn test_sync_cookie_file_removes_stale_file_when_cleared() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cookies.txt");
+        let mut hash = 0;
+
+        tokio::fs::write(&path, "stale").await.unwrap();
+        sync_cookie_file("   ", path.to_str().unwrap(), &mut hash, false)
+            .await
+            .unwrap();
+
+        assert!(!path.exists());
+        assert_eq!(hash, 0);
+    }
 }

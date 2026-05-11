@@ -45,6 +45,28 @@ async fn main() -> Result<()> {
     observability::spawn_heartbeat(client.clone());
     observability::publish_log(&client, "info", "downloader online").await;
 
+    {
+        let client = client.clone();
+        let db = db.clone();
+        let runtime = runtime.clone();
+        let cookies_path = config.cookies_path.clone();
+        tokio::spawn(async move {
+            let mut updates = match client.subscribe("system.config_changed").await {
+                Ok(sub) => sub,
+                Err(e) => {
+                    warn!("failed to subscribe to config changes: {e}");
+                    return;
+                }
+            };
+            while updates.next().await.is_some() {
+                match db::refresh_settings_now(&db, &runtime, &cookies_path).await {
+                    Ok(()) => info!("applied config change immediately"),
+                    Err(e) => warn!("config change refresh failed: {e}"),
+                }
+            }
+        });
+    }
+
     let mut subscriber = client.subscribe("download.request").await?;
     info!("listening for download requests...");
 
@@ -143,10 +165,16 @@ async fn process_download(
     config: &Config,
     runtime: &Arc<RwLock<RuntimeSettings>>,
 ) -> DownloadResult {
-    match download::download_video(&request.video_id, &request.url, config).await {
+    let current = runtime.read().await.clone();
+    match download::download_video(
+        &request.video_id,
+        &request.url,
+        config,
+        &current.ytdlp_extractor_args,
+    ).await {
         Ok(output) => {
             let size = download::get_file_size(&output.file_path).unwrap_or(0);
-            let max_size = runtime.read().await.max_filesize_bytes;
+            let max_size = current.max_filesize_bytes;
             if size > max_size {
                 let _ = std::fs::remove_file(&output.file_path);
                 return DownloadResult::failure(

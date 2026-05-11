@@ -15,6 +15,7 @@ export interface FieldMeta {
   placeholder?: string;
   multiline?: boolean;
   required?: boolean;
+  secret?: boolean;
 }
 
 export interface SettingsSection {
@@ -41,12 +42,14 @@ export const FIELD_META: Record<string, FieldMeta> = {
     help: "The secret paired with the client ID. It is stored server-side and masked by default.",
     placeholder: "GOCSPX-...",
     required: true,
+    secret: true,
   },
   "google.refresh_token": {
     key: "google.refresh_token",
     label: "Google refresh token",
     help: "Created automatically after the browser authorization step. You usually do not paste this manually.",
     required: true,
+    secret: true,
   },
   "google.auth_status": {
     key: "google.auth_status",
@@ -59,6 +62,7 @@ export const FIELD_META: Record<string, FieldMeta> = {
     help: "Create a bot with @BotFather, then add it as admin to the destination channels.",
     placeholder: "123456789:AA...",
     required: true,
+    secret: true,
   },
   "telegram.chat_likes": {
     key: "telegram.chat_likes",
@@ -91,10 +95,11 @@ export const FIELD_META: Record<string, FieldMeta> = {
   "youtube.cookies": {
     key: "youtube.cookies",
     label: "YouTube cookies.txt",
-    help: "Netscape-format cookies from a logged-in browser session. Required for watch-history scraping.",
+    help: "Netscape-format cookies from a logged-in browser session. Required for watch-history scraping and authenticated downloads.",
     placeholder: "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t...",
     multiline: true,
     required: true,
+    secret: true,
   },
   "poll.interval_likes": {
     key: "poll.interval_likes",
@@ -135,11 +140,21 @@ export const FIELD_META: Record<string, FieldMeta> = {
     key: "telegram.api_hash",
     label: "Telegram API hash",
     help: "Advanced user-account mode only. Not needed for bot mode.",
+    secret: true,
   },
   "telegram.session_string": {
     key: "telegram.session_string",
     label: "Telethon session string",
     help: "Advanced user-account mode only. Generate once with Telethon and paste it here.",
+    secret: true,
+  },
+  "downloader.ytdlp_extractor_args": {
+    key: "downloader.ytdlp_extractor_args",
+    label: "yt-dlp extractor args",
+    help: "Optional advanced override passed to yt-dlp as --extractor-args. Use this for player-client changes, PO-token providers, or temporary YouTube workarounds.",
+    placeholder: "youtube:player_client=mweb;po_token=mweb.gvs+...",
+    multiline: true,
+    secret: true,
   },
 };
 
@@ -184,6 +199,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     ],
   },
   {
+    id: "downloader-advanced",
+    title: "Downloader advanced",
+    summary: "Optional yt-dlp overrides for YouTube breakages, alternate clients, and PO-token tooling.",
+    keys: ["downloader.ytdlp_extractor_args"],
+  },
+  {
     id: "telegram-user",
     title: "Telegram user-account mode",
     summary: "Optional advanced mode. Bot mode is enough for normal delivery.",
@@ -200,6 +221,7 @@ export const REQUIRED_STATUS_KEYS = [
   "telegram_chat_subs_set",
   "telegram_admin_set",
   "youtube_cookies_set",
+  "youtube_cookies_file_ready",
 ];
 
 export function isSystemReady(status?: SettingsStatus): boolean {
@@ -208,9 +230,16 @@ export function isSystemReady(status?: SettingsStatus): boolean {
 
 export function sectionFields(section: SettingsSection, settings: Setting[]): Setting[] {
   const byKey = new Map(settings.map((setting) => [setting.key, setting]));
-  return section.keys.flatMap((key) => {
+  return section.keys.map((key) => {
     const setting = byKey.get(key);
-    return setting ? [setting] : [];
+    if (setting) return setting;
+    return {
+      key,
+      value: "",
+      description: null,
+      is_secret: !!FIELD_META[key]?.secret,
+      updated_at: "",
+    };
   });
 }
 
