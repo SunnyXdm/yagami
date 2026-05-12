@@ -104,6 +104,21 @@ export function Header({
   right?: React.ReactNode;
   hero?: boolean;
 }) {
+  if (!hero) {
+    return (
+      <header className="mb-6">
+        <div className="flex items-start justify-between gap-6">
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">{eyebrow}</div>
+            <h1 className="mt-1.5 text-[22px] font-semibold leading-[1.2] tracking-[-0.015em] text-text">{title}</h1>
+            {subtitle && <p className="mt-1 text-[14px] leading-[1.6] text-body">{subtitle}</p>}
+          </div>
+          {right && <div className="flex-shrink-0 pt-0.5">{right}</div>}
+        </div>
+      </header>
+    );
+  }
+
   const card = (
     <div className="command-card overflow-hidden">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-[12px] text-muted">
@@ -125,10 +140,7 @@ export function Header({
 
         <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="max-w-4xl">
-            <div className={cn(
-              "font-display font-semibold text-text",
-              hero ? "text-[clamp(2.75rem,6vw,4rem)] leading-[1.1]" : "text-[clamp(2rem,4vw,3rem)] leading-[1.15]"
-            )}>
+            <div className="font-display font-semibold text-text text-[clamp(2.75rem,6vw,4rem)] leading-[1.1]">
               {title}
             </div>
             {subtitle && <p className="mt-3 max-w-2xl text-[16px] leading-[1.6] text-body">{subtitle}</p>}
@@ -149,7 +161,7 @@ export function Header({
 
   return (
     <header className="mb-8">
-      {hero ? <div className="hero-stripe-band rounded-[16px] p-px">{card}</div> : card}
+      <div className="hero-stripe-band rounded-[16px] p-px">{card}</div>
     </header>
   );
 }

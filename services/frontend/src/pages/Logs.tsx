@@ -117,8 +117,7 @@ export function LogsPage() {
     <div className="space-y-6">
       <Header
         eyebrow="Logs"
-        title="Runtime ledger"
-        subtitle="Live logs from every service, kept in the same dark runtime ledger instead of switching into a separate light table aesthetic."
+        title="Log viewer"
         right={
           <button
             onClick={() => {

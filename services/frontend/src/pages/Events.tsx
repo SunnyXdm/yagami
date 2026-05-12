@@ -35,8 +35,7 @@ export function EventsPage() {
     <div className="space-y-6">
       <Header
         eyebrow="Activity"
-        title="Activity archive"
-        subtitle="Likes, watches, and subscription changes in reverse chronological order, all rendered in the same dark archive surface as the rest of the app."
+        title="Event log"
       />
 
       <div className="surface-dark flex flex-wrap gap-3 p-4 sm:p-5">
@@ -123,9 +122,9 @@ function eventHref(e: Event) {
 
 function eventTitle(e: Event) {
   if (e.event_type === "subscribe" || e.event_type === "unsubscribe") {
-    return e.channel_title || e.title || e.channel_id || "(untitled)";
+    return e.channel_title || e.title || "(untitled)";
   }
-  return e.title || e.channel_title || e.channel_id || "(untitled)";
+  return e.title || e.channel_title || "(untitled)";
 }
 
 function eventSubtitle(e: Event) {

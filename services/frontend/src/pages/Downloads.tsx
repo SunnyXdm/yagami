@@ -158,8 +158,7 @@ export function DownloadsPage() {
     <div className="space-y-6">
       <Header
         eyebrow="Downloads"
-        title="Delivery lanes with live download and Telegram upload telemetry."
-        subtitle="Priority admin jobs, yt-dlp progress, and Telegram delivery tracking all stay in the same dark command surface."
+        title="Download queue"
         right={
           <div className="flex flex-wrap gap-2">
             <span className="inline-flex items-center rounded-[8px] border border-border bg-panel px-3 py-2 text-[13px] text-body">
@@ -228,13 +227,13 @@ export function DownloadsPage() {
                         href={download.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="line-clamp-2 text-[24px] font-semibold leading-[1.15] tracking-[-0.02em] text-text hover:text-white"
+                        className="line-clamp-2 text-[22px] font-semibold leading-[1.2] tracking-[-0.02em] text-text hover:text-white"
                       >
-                        {download.title || download.video_id}
+                        {download.title ?? <span className="text-muted">Untitled</span>}
                       </a>
                     ) : (
-                      <div className="line-clamp-2 text-[24px] font-semibold leading-[1.15] tracking-[-0.02em] text-text">
-                        {download.title || download.video_id}
+                      <div className="line-clamp-2 text-[22px] font-semibold leading-[1.2] tracking-[-0.02em] text-text">
+                        {download.title ?? <span className="text-muted">Untitled</span>}
                       </div>
                     )}
 

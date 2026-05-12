@@ -94,8 +94,7 @@ export function SettingsPage() {
     <div className="space-y-8">
       <Header
         eyebrow="Settings"
-        title="Configure integrations and worker defaults from one dark control surface."
-        subtitle="Everything here follows the same command-palette grammar: dark surfaces, hairline borders, and a single white save action when something changes."
+        title="Settings"
         right={
           <button onClick={() => setReveal((value) => !value)} className="button-secondary-dark gap-2">
             {reveal ? <EyeOff size={14} /> : <Eye size={14} />}
