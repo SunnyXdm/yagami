@@ -129,7 +129,7 @@ defmodule YoutubePoller.SubsWorker do
     unless already_warned? do
       YoutubePoller.NatsClient.publish_debug(
         "⚠️ Unsubscribe monitoring is paused because YouTube returned an incomplete or duplicate-filled subscriptions snapshot. " <>
-          "Recent new subscriptions will still be reported when their created-at timestamp is fresh, but large accounts near the 1000-subscription API ceiling cannot support reliable unsubscribe detection."
+          "Recent new subscriptions may still be reported when they appear inside the returned window and their created-at timestamp is fresh, but large accounts near the 1000-subscription API ceiling cannot support reliable unsubscribe detection."
       )
     end
   end
