@@ -104,8 +104,11 @@ function pathForPage(page: Page): string {
 
 function FullSpinner() {
   return (
-    <div className="h-screen w-screen grid place-items-center">
-      <div className="h-8 w-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+    <div className="grid h-screen w-screen place-items-center bg-bg text-text">
+      <div className="flex items-center gap-3">
+        <span className="h-3 w-3 rounded-full bg-accent animate-pulse" />
+        <span className="mono-eyebrow text-ash">Preparing the control surface</span>
+      </div>
     </div>
   );
 }

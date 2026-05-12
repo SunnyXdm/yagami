@@ -17,28 +17,35 @@ export function Setup({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="h-screen grid place-items-center px-4">
-      <div className="w-full max-w-md">
-        <div className="mb-8 flex items-center gap-3">
-          <Logo />
-          <div>
-            <div className="text-xl font-semibold tracking-tight">Welcome to Yagami</div>
-            <div className="text-xs text-muted">Create your admin account to begin</div>
+    <div className="min-h-screen bg-bg text-text">
+      <div className="page-container grid min-h-screen items-center gap-12 py-12 lg:grid-cols-[minmax(0,1.1fr)_460px]">
+        <div className="max-w-4xl">
+          <div className="flex items-center gap-3">
+            <Logo className="h-4 w-4" />
+            <div className="font-display text-[28px] leading-none tracking-[-0.04em]">Yagami</div>
           </div>
+          <div className="mono-eyebrow mt-10">First operator handoff</div>
+          <h1 className="editorial-display mt-4 text-[clamp(3.75rem,9vw,6.75rem)]">Create the admin desk.</h1>
+          <p className="mt-6 max-w-xl text-[18px] leading-[1.5] text-ash">
+            This is a one-time account setup. After sign-in, Yagami will guide Google, Telegram,
+            and watch-history access before the dashboard opens.
+          </p>
         </div>
-        <form onSubmit={submit} className="space-y-4 bg-panel/60 backdrop-blur border border-border rounded-2xl p-6 shadow-2xl">
-          <div className="text-sm text-muted leading-relaxed">
-            This is a one-time account setup. After sign-in, Yagami will walk you through Google, Telegram, and YouTube cookies before the dashboard opens. Credentials are stored in the database, never on disk.
+
+        <form onSubmit={submit} className="surface-light space-y-5 p-8 sm:p-10">
+          <div className="surface-paper p-4 text-[15px] leading-[1.5] text-slateSoft">
+            Credentials are stored in the database, not on disk. Once this account exists, all
+            future access flows through the normal sign-in screen.
           </div>
           <Field label="Admin username">
-            <input className={inputCls} value={u} onChange={(e) => setU(e.target.value)} />
+            <input className="input-light" value={u} onChange={(e) => setU(e.target.value)} />
           </Field>
           <Field label="Password (min 8 chars)">
-            <input className={inputCls} type="password" value={p} onChange={(e) => setP(e.target.value)} />
+            <input className="input-light" type="password" value={p} onChange={(e) => setP(e.target.value)} />
           </Field>
-          {err && <div className="text-err text-sm">{err}</div>}
-          <button disabled={busy} className={btnPrimary}>
-            {busy ? "Creating…" : "Create account"}
+          {err && <div className="text-sm text-err">{err}</div>}
+          <button disabled={busy} className="button-primary-light w-full">
+            {busy ? "Creating..." : "Create account"}
           </button>
         </form>
       </div>
@@ -46,13 +53,10 @@ export function Setup({ onDone }: { onDone: () => void }) {
   );
 }
 
-const inputCls = "w-full rounded-lg bg-bg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent2/60";
-const btnPrimary = "w-full rounded-lg bg-accent text-white text-sm font-medium py-2 hover:bg-accent/90 disabled:opacity-50 transition";
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <div className="text-xs text-muted mb-1.5">{label}</div>
+      <div className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{label}</div>
       {children}
     </label>
   );

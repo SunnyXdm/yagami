@@ -27,9 +27,9 @@ function classify(hb?: Hb): { state: Health; label: string } {
 }
 
 const dotColor: Record<Health, string> = {
-  up:        "bg-ok shadow-[0_0_6px_rgba(34,197,94,.7)]",
-  degraded:  "bg-warn shadow-[0_0_6px_rgba(245,158,11,.7)]",
-  starting:  "bg-accent2 shadow-[0_0_6px_rgba(124,92,255,.7)] animate-pulse",
+  up:        "bg-ok",
+  degraded:  "bg-warn",
+  starting:  "bg-accent2 animate-pulse",
   down:      "bg-err",
 };
 
@@ -41,14 +41,18 @@ export function ServiceHealthDot() {
   });
 
   return (
-    <div className="space-y-1.5">
+    <div className="flex flex-wrap gap-2">
       {SERVICES.map((s) => {
         const c = classify(data?.find((h) => h.service === s));
         return (
-          <div key={s} className="flex items-center gap-2 text-[11px]" title={c.label}>
-            <span className={cn("h-1.5 w-1.5 rounded-full flex-shrink-0", dotColor[c.state])} />
-            <span className="text-text/80 truncate">{LABELS[s]}</span>
-            <span className="ml-auto tabular-nums text-muted">{c.label}</span>
+          <div
+            key={s}
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-panel px-3 py-2 text-[11px]"
+            title={c.label}
+          >
+            <span className={cn("h-2 w-2 rounded-full flex-shrink-0", dotColor[c.state])} />
+            <span className="font-mono uppercase tracking-[0.12em] text-muted">{LABELS[s]}</span>
+            <span className="tabular-nums text-ash">{c.label}</span>
           </div>
         );
       })}

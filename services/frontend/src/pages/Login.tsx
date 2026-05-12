@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { apiPost } from "../lib/api";
+import { cn } from "../lib/utils";
 
 export function Login({ onLogin }: { onLogin: () => void }) {
   const [u, setU] = useState("");
@@ -16,25 +17,37 @@ export function Login({ onLogin }: { onLogin: () => void }) {
   }
 
   return (
-    <div className="h-screen grid place-items-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex items-center gap-3">
-          <Logo />
-          <div>
-            <div className="font-display text-3xl leading-none tracking-tight">Yagami</div>
-            <div className="text-xs text-muted">Sign in to continue</div>
+    <div className="min-h-screen bg-bg text-text">
+      <div className="page-container grid min-h-screen items-center gap-12 py-12 lg:grid-cols-[minmax(0,1.1fr)_420px]">
+        <div className="max-w-4xl">
+          <div className="flex items-center gap-3">
+            <Logo className="h-4 w-4" />
+            <div className="font-display text-[28px] leading-none tracking-[-0.04em]">Yagami</div>
           </div>
+          <div className="mono-eyebrow mt-10">Operator access</div>
+          <h1 className="editorial-display mt-4 text-[clamp(4rem,10vw,7rem)]">Structure steadies the stream.</h1>
+          <p className="mt-6 max-w-xl text-[18px] leading-[1.5] text-ash">
+            Sign in to manage the activity archive, delivery lanes, and runtime ledger.
+          </p>
         </div>
-        <form onSubmit={submit} className="space-y-4 bg-panel/60 backdrop-blur border border-border rounded-2xl p-6 shadow-2xl">
+
+        <form onSubmit={submit} className="surface-light space-y-5 p-8 sm:p-10">
+          <div>
+            <div className="mono-eyebrow text-muted">Sign in</div>
+            <div className="mt-3 text-[32px] leading-[1.05] tracking-[-0.02em] text-ink">Open the control surface.</div>
+            <div className="mt-2 text-[15px] leading-[1.5] text-muted">
+              Use the admin account you created during initial setup.
+            </div>
+          </div>
           <Field label="Username">
-            <input className={inputCls} value={u} onChange={(e) => setU(e.target.value)} autoFocus />
+            <input className="input-light" value={u} onChange={(e) => setU(e.target.value)} autoFocus />
           </Field>
           <Field label="Password">
-            <input className={inputCls} type="password" value={p} onChange={(e) => setP(e.target.value)} />
+            <input className="input-light" type="password" value={p} onChange={(e) => setP(e.target.value)} />
           </Field>
-          {err && <div className="text-err text-sm">{err}</div>}
-          <button disabled={busy} className={btnPrimary}>
-            {busy ? "Signing in…" : "Sign in"}
+          {err && <div className="text-sm text-err">{err}</div>}
+          <button disabled={busy} className="button-primary-light w-full">
+            {busy ? "Signing in..." : "Sign in"}
           </button>
         </form>
       </div>
@@ -42,22 +55,15 @@ export function Login({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-const inputCls = "w-full rounded-lg bg-bg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent2/60";
-const btnPrimary = "w-full rounded-lg bg-accent text-white text-sm font-medium py-2 hover:bg-accent/90 disabled:opacity-50 transition";
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <div className="text-xs text-muted mb-1.5">{label}</div>
+      <div className="mb-2 font-mono text-[11px] uppercase tracking-[0.14em] text-muted">{label}</div>
       {children}
     </label>
   );
 }
 
-export function Logo() {
-  return (
-    <div className="grid h-11 w-11 place-items-center rounded-[16px] border border-white/10 bg-[linear-gradient(135deg,rgba(255,106,66,.95),rgba(84,146,255,.88))] font-display text-xl text-white shadow-glow">
-      Y
-    </div>
-  );
+export function Logo({ className = "" }: { className?: string }) {
+  return <span className={cn("inline-block h-3 w-3 rounded-full bg-accent", className)} />;
 }
