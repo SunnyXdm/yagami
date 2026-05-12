@@ -116,9 +116,9 @@ export function LogsPage() {
   return (
     <div className="space-y-6">
       <Header
-        eyebrow="Structured traces"
+        eyebrow="Logs"
         title="Runtime ledger"
-        subtitle="Live logs from every service. Filters stay on the dark surface; the dense ledger moves onto paper for easier reading."
+        subtitle="Live logs from every service, kept in the same dark runtime ledger instead of switching into a separate light table aesthetic."
         right={
           <button
             onClick={() => {
@@ -131,8 +131,8 @@ export function LogsPage() {
               });
             }}
             className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-[5px] border px-4 text-[13px] font-medium transition",
-              follow ? "border-accent bg-accent text-ink" : "border-border bg-panel text-ash hover:text-text",
+              "inline-flex h-9 items-center gap-2 rounded-[8px] border px-4 text-[13px] font-medium transition",
+              follow ? "border-white/12 bg-elevated text-text" : "border-border bg-panel text-body hover:text-text",
             )}
           >
             {follow ? <Pause size={14} /> : <Play size={14} />}
@@ -142,19 +142,19 @@ export function LogsPage() {
       />
 
       <div className="surface-dark flex flex-wrap gap-3 p-4 sm:p-5">
-        <div className="flex h-11 items-center gap-2 rounded-[3px] border border-border bg-bg px-4">
+        <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-card px-4">
           <Search size={14} className="text-muted" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="search messages..."
-            className="w-48 bg-transparent text-[15px] text-ash outline-none"
+            className="w-48 bg-transparent text-[15px] text-text outline-none"
           />
         </div>
         <select
           value={level}
           onChange={(e) => setLevel(e.target.value)}
-          className="h-11 rounded-[3px] border border-border bg-bg px-4 text-[15px] text-ash outline-none transition focus:ring-2 focus:ring-linkBlueSoft/30"
+          className="h-11 rounded-[8px] border border-border bg-card px-4 text-[15px] text-text outline-none transition focus:ring-2 focus:ring-white/10"
         >
           <option value="">all levels</option>
           <option value="info">info</option>
@@ -169,8 +169,8 @@ export function LogsPage() {
                 key={service}
                 onClick={() => setServices((prev) => (on ? prev.filter((value) => value !== service) : [...prev, service]))}
                 className={cn(
-                  "rounded-full border px-4 py-2 font-mono text-[11px] uppercase tracking-[0.12em] transition",
-                  on ? "border-hairline bg-light text-ink" : "border-border bg-panel text-ash hover:text-text",
+                  "rounded-[8px] border px-4 py-2 text-[12px] transition",
+                  on ? "border-white/12 bg-elevated text-text" : "border-border bg-panel text-body hover:text-text",
                 )}
               >
                 {service}
@@ -180,15 +180,15 @@ export function LogsPage() {
         </div>
       </div>
 
-      <div ref={listRef} onScroll={handleScroll} className="surface-light max-h-[70vh] overflow-auto">
-        <div className="font-mono text-[12px] text-ink">
+      <div ref={listRef} onScroll={handleScroll} className="command-card max-h-[70vh] overflow-auto">
+        <div className="text-[12px] text-body">
           {filtered.length === 0 ? (
             <div className="p-6 text-center text-muted">No logs match these filters yet.</div>
           ) : (
             filtered.map((entry, index) => <LogRow key={entry.id ?? index} e={entry} />)
           )}
           {filtered.length > 0 && (
-            <div className="border-t border-hairline px-4 py-3 text-center text-[11px] text-muted">
+            <div className="border-t border-border px-4 py-3 text-center text-[11px] text-muted">
               {loadingMore ? "Loading older logs..." : hasMore ? "Scroll down for older logs." : "You have reached the oldest loaded log."}
             </div>
           )}
@@ -223,25 +223,25 @@ function appendOlder(prev: LogEntry[], older: LogEntry[]) {
 
 function LogRow({ e }: { e: LogEntry }) {
   const colors: Record<string, string> = {
-    info: "text-ink",
-    warn: "text-warn",
-    error: "text-err",
+    info: "text-text",
+    warn: "text-accentYellow",
+    error: "text-accentRed",
     debug: "text-muted",
   };
 
   const serviceColors: Record<string, string> = {
-    "api-gateway": "text-linkBlue",
-    "youtube-poller": "text-accent",
-    downloader: "text-ok",
-    "telegram-client": "text-slateSoft",
+    "api-gateway": "text-accentBlue",
+    "youtube-poller": "text-accentYellow",
+    downloader: "text-accentGreen",
+    "telegram-client": "text-accentRed",
   };
 
   return (
-    <div className="grid min-w-[760px] grid-cols-[110px_140px_72px_1fr] gap-4 border-b border-hairline px-4 py-3 hover:bg-paper/70">
+    <div className="grid min-w-[760px] grid-cols-[110px_140px_72px_1fr] gap-4 border-b border-border px-4 py-3 hover:bg-card/70">
       <span className="tabular-nums text-muted">{formatRelative(e.ts)}</span>
       <span className={serviceColors[e.service] || "text-muted"}>{e.service}</span>
       <span className={cn("uppercase tracking-[0.12em]", colors[e.level] || "")}>{e.level}</span>
-      <span className={cn("whitespace-pre-wrap break-words", colors[e.level] || "text-ink")}>{e.message}</span>
+      <span className={cn("whitespace-pre-wrap break-words", colors[e.level] || "text-text")}>{e.message}</span>
     </div>
   );
 }

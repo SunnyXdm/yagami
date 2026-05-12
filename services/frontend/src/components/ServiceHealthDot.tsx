@@ -27,10 +27,10 @@ function classify(hb?: Hb): { state: Health; label: string } {
 }
 
 const dotColor: Record<Health, string> = {
-  up:        "bg-ok",
-  degraded:  "bg-warn",
-  starting:  "bg-accent2 animate-pulse",
-  down:      "bg-err",
+  up:        "bg-accentGreen",
+  degraded:  "bg-accentYellow",
+  starting:  "bg-accentBlue animate-pulse",
+  down:      "bg-accentRed",
 };
 
 export function ServiceHealthDot() {
@@ -47,12 +47,12 @@ export function ServiceHealthDot() {
         return (
           <div
             key={s}
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-panel px-3 py-2 text-[11px]"
+            className="inline-flex items-center gap-2 rounded-[8px] border border-border bg-panel px-3 py-2 text-[12px]"
             title={c.label}
           >
             <span className={cn("h-2 w-2 rounded-full flex-shrink-0", dotColor[c.state])} />
-            <span className="font-mono uppercase tracking-[0.12em] text-muted">{LABELS[s]}</span>
-            <span className="tabular-nums text-ash">{c.label}</span>
+            <span className="text-body">{LABELS[s]}</span>
+            <span className="tabular-nums text-muted">{c.label}</span>
           </div>
         );
       })}

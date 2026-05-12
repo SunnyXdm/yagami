@@ -34,9 +34,9 @@ export function EventsPage() {
   return (
     <div className="space-y-6">
       <Header
-        eyebrow="Watched, liked, subscribed"
+        eyebrow="Activity"
         title="Activity archive"
-        subtitle="Likes, watches, and subscription changes in reverse chronological order. The archive lives on the light surface so dense reading stays easy."
+        subtitle="Likes, watches, and subscription changes in reverse chronological order, all rendered in the same dark archive surface as the rest of the app."
       />
 
       <div className="surface-dark flex flex-wrap gap-3 p-4 sm:p-5">
@@ -44,12 +44,12 @@ export function EventsPage() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search by video or channel title..."
-          className="input-light w-full sm:w-80"
+          className="input-dark w-full sm:w-80"
         />
         <select
           value={type}
           onChange={(e) => setType(e.target.value)}
-          className="h-11 rounded-[3px] border border-hairline bg-light px-4 text-[16px] text-ink outline-none transition focus:ring-2 focus:ring-linkBlue/30"
+          className="h-11 rounded-[8px] border border-border bg-card px-4 text-[15px] text-text outline-none transition focus:ring-2 focus:ring-white/10"
         >
           <option value="">all events</option>
           <option value="like">likes</option>
@@ -61,7 +61,7 @@ export function EventsPage() {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {(data?.length ?? 0) === 0 && (
-          <div className="surface-paper col-span-full px-8 py-12 text-center text-[15px] text-muted">
+          <div className="surface-dark col-span-full px-8 py-12 text-center text-[15px] text-body">
             No activity yet. Once the YouTube poller runs, your likes and watches will land here.
           </div>
         )}
@@ -71,26 +71,26 @@ export function EventsPage() {
           const content = (
             <>
               {e.thumbnail_url ? (
-                <img src={e.thumbnail_url} className="w-full aspect-video object-cover rounded-[6px] flex-shrink-0 sm:w-40" alt="" />
+                <img src={e.thumbnail_url} className="w-full aspect-video object-cover rounded-[10px] flex-shrink-0 sm:w-40" alt="" />
               ) : (
-                <div className="w-full aspect-video rounded-[6px] bg-paper flex-shrink-0 sm:w-40" />
+                <div className="w-full aspect-video rounded-[10px] bg-card flex-shrink-0 sm:w-40" />
               )}
               <div className="min-w-0 flex-1">
                 <div className="mb-2 flex items-center gap-2">
                   <TypeBadge t={e.event_type} />
-                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
+                  <span className="text-[12px] text-muted">
                     {formatRelative(e.created_at)}
                   </span>
                 </div>
-                <div className="line-clamp-2 text-[24px] leading-[1.05] tracking-[-0.02em] text-ink transition group-hover:text-accent">
+                <div className="line-clamp-2 text-[22px] font-semibold leading-[1.15] tracking-[-0.02em] text-text transition group-hover:text-white">
                   {eventTitle(e)}
                 </div>
-                <div className="mt-2 truncate text-[15px] text-muted">{eventSubtitle(e)}</div>
+                <div className="mt-2 truncate text-[15px] text-body">{eventSubtitle(e)}</div>
               </div>
             </>
           );
 
-          const cardClass = "grid gap-4 rounded-[12px] border border-hairline bg-light p-4 text-ink shadow-softdrop sm:grid-cols-[160px_1fr] sm:items-start";
+          const cardClass = "grid gap-4 rounded-[12px] border border-border bg-panel p-4 text-text sm:grid-cols-[160px_1fr] sm:items-start";
 
           if (!href) {
             return (
@@ -136,19 +136,15 @@ function eventSubtitle(e: Event) {
 }
 
 function TypeBadge({ t }: { t: string }) {
-  const colors: Record<string, string> = {
-    like: "border-accent/35 bg-accent/12 text-ink",
-    watch: "border-linkBlue/20 bg-linkBlue/5 text-linkBlue",
-    subscribe: "border-ok/30 bg-ok/10 text-ink",
-    unsubscribe: "border-err/30 bg-err/10 text-ink",
+  const dots: Record<string, string> = {
+    like: "bg-accentYellow",
+    watch: "bg-accentBlue",
+    subscribe: "bg-accentGreen",
+    unsubscribe: "bg-accentRed",
   };
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-[0.12em]",
-        colors[t] || "border-hairline bg-paper text-ink",
-      )}
-    >
+    <span className="inline-flex items-center gap-2 rounded-[8px] border border-border bg-card px-3 py-1.5 text-[12px] text-body">
+      <span className={cn("h-2 w-2 rounded-full", dots[t] || "bg-white/45")} />
       {t}
     </span>
   );

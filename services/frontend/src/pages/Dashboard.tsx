@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Search } from "lucide-react";
 import { apiGet } from "../lib/api";
 import { cn, formatBytes } from "../lib/utils";
 
@@ -27,47 +28,53 @@ export function Dashboard() {
   return (
     <div className="space-y-8">
       <Header
-        eyebrow="Editorial control"
-        title="Signal overview"
-        subtitle="Live overview of activity, downloads, and service health. Dark surfaces carry the live voice; the light panel holds the denser reading surface."
+        eyebrow="Overview"
+        title="Your command center for everything Yagami is tracking."
+        subtitle="Live overview of activity, downloads, and service health, framed like a product surface instead of a marketing layout."
+        hero
       />
       {isLoading || !data ? (
-        <div className="surface-dark px-6 py-8 text-[15px] text-ash">Loading...</div>
+        <div className="surface-dark px-6 py-8 text-[15px] text-body">Loading...</div>
       ) : (
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Stat label="Liked videos" value={data.total_liked} sub={`+${data.liked_today} today`} tone="brand" />
-            <Stat label="Watched" value={data.total_watched} sub={`+${data.watched_today} today`} tone="dark" />
-            <Stat label="Subscriptions" value={data.total_subscribed} tone="light" />
-            <Stat label="Downloaded" value={data.total_downloaded} sub={formatBytes(data.bytes_downloaded)} tone="dark" />
+            <Stat label="Liked videos" value={data.total_liked} sub={`+${data.liked_today} today`} accent="yellow" />
+            <Stat label="Watched" value={data.total_watched} sub={`+${data.watched_today} today`} accent="blue" />
+            <Stat label="Subscriptions" value={data.total_subscribed} accent="green" />
+            <Stat label="Downloaded" value={data.total_downloaded} sub={formatBytes(data.bytes_downloaded)} accent="red" />
           </div>
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.28fr)]">
-            <Card title="This week" tone="dark">
+            <Card title="This week" tone="surface" hint="Recent totals">
               <Row label="Likes" value={data.liked_last_7d} />
               <Row label="Watches" value={data.watched_last_7d} />
               <Row label="Active downloads" value={data.downloads_active} />
               <Row label="Failed downloads" value={data.downloads_failed} bad={data.downloads_failed > 0} />
             </Card>
-            <Card className="xl:min-h-full" title="Top channels" tone="light">
+            <Card className="xl:min-h-full" title="Top channels" tone="elevated" hint="Last 7 days">
               {(data.top_channels?.length ?? 0) === 0 ? (
-                <div className="text-[15px] text-muted">No activity in the last 7 days.</div>
+                <div className="text-[15px] text-body">No activity in the last 7 days.</div>
               ) : (
                 <div className="space-y-5">
                   {data.top_channels.map((c) => {
                     const max = Math.max(...(data.top_channels || []).map((x) => x.count), 1);
                     return (
-                      <div key={c.channel_id} className="space-y-2 border-b border-hairline pb-5 last:border-b-0 last:pb-0">
+                      <div key={c.channel_id} className="rounded-[10px] border border-border bg-card p-4 last:border-border">
                         <div className="flex items-start justify-between gap-4">
-                          <div className="min-w-0">
-                            <div className="truncate text-[24px] leading-[1.05] tracking-[-0.02em] text-ink">{c.channel_title}</div>
-                            <div className="mono-caps mt-2">{c.channel_id}</div>
+                          <div className="min-w-0 flex items-start gap-3">
+                            <span className="mt-0.5 grid h-10 w-10 flex-shrink-0 place-items-center rounded-[8px] border border-border bg-panel text-[14px] font-medium text-text">
+                              {c.channel_title?.slice(0, 1).toUpperCase() || "Y"}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="truncate text-[18px] font-medium leading-[1.4] text-text">{c.channel_title}</div>
+                              <div className="mt-1 text-[13px] text-muted">{c.channel_id}</div>
+                            </div>
                           </div>
-                          <span className="font-display text-[36px] leading-none tracking-[-0.03em] text-ink tabular-nums">{c.count}</span>
+                          <span className="text-[28px] font-semibold leading-none text-text tabular-nums">{c.count}</span>
                         </div>
-                        <div className="h-1.5 rounded-full bg-paper">
+                        <div className="mt-4 h-1.5 rounded-full bg-panel">
                           <div
-                            className="h-1.5 rounded-full bg-ink"
+                            className="h-1.5 rounded-full bg-white"
                             style={{ width: `${(c.count / max) * 100}%` }}
                           />
                         </div>
@@ -85,33 +92,64 @@ export function Dashboard() {
 }
 
 export function Header({
-  eyebrow = "Operations",
+  eyebrow = "Overview",
   title,
   subtitle,
   right,
+  hero = false,
 }: {
   eyebrow?: string;
   title: string;
   subtitle?: string;
   right?: React.ReactNode;
+  hero?: boolean;
 }) {
-  return (
-    <header className="mb-10 border-b border-border pb-10">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-        <div className="max-w-4xl">
-          <div className="mono-eyebrow">{eyebrow}</div>
-          <h1 className="editorial-display mt-5 text-[clamp(3.5rem,8vw,6.25rem)]">{title}</h1>
-          {subtitle && <p className="mt-5 max-w-2xl text-[18px] leading-[1.5] text-ash">{subtitle}</p>}
-        </div>
-        <div className="flex justify-start lg:justify-end">
-          {right ?? (
-            <div className="inline-flex items-center gap-3 rounded-full border border-border bg-panel px-4 py-3">
-              <span className="h-2 w-2 rounded-full bg-ok animate-pulse" />
-              <span className="mono-caps text-ash">Live telemetry</span>
-            </div>
-          )}
+  const card = (
+    <div className="command-card overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-[12px] text-muted">
+        <span className="h-2 w-2 rounded-full bg-white/55" />
+        <span className="h-2 w-2 rounded-full bg-white/35" />
+        <span className="h-2 w-2 rounded-full bg-white/15" />
+        <span className="ml-3 font-medium text-body">{eyebrow}</span>
+        <div className="ml-auto flex items-center gap-2">
+          <span className="keycap">⌘</span>
+          <span className="keycap">K</span>
         </div>
       </div>
+
+      <div className="px-5 py-5 md:px-6 md:py-6">
+        <div className="flex max-w-lg items-center gap-2 rounded-[8px] border border-border bg-elevated px-3 py-2 text-[14px] text-body">
+          <Search size={14} className="text-muted" />
+          <span>Search commands, queues, settings, and activity</span>
+        </div>
+
+        <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div className="max-w-4xl">
+            <div className={cn(
+              "font-display font-semibold text-text",
+              hero ? "text-[clamp(2.75rem,6vw,4rem)] leading-[1.1]" : "text-[clamp(2rem,4vw,3rem)] leading-[1.15]"
+            )}>
+              {title}
+            </div>
+            {subtitle && <p className="mt-3 max-w-2xl text-[16px] leading-[1.6] text-body">{subtitle}</p>}
+          </div>
+
+          <div className="flex justify-start lg:justify-end">
+            {right ?? (
+              <div className="inline-flex items-center gap-2 rounded-[8px] border border-border bg-elevated px-3 py-2 text-[13px] text-body">
+                <span className="h-2 w-2 rounded-full bg-accentGreen" />
+                Live telemetry
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <header className="mb-8">
+      {hero ? <div className="hero-stripe-band rounded-[16px] p-px">{card}</div> : card}
     </header>
   );
 }
@@ -120,33 +158,31 @@ function Stat({
   label,
   value,
   sub,
-  tone = "dark",
+  accent = "blue",
 }: {
   label: string;
   value: number;
   sub?: string;
-  tone?: "dark" | "light" | "brand";
+  accent?: "blue" | "green" | "red" | "yellow";
 }) {
-  const className = tone === "brand"
-    ? "rounded-[12px] border border-accent bg-accent p-5 text-ink"
-    : tone === "light"
-      ? "surface-light p-5"
-      : "surface-dark p-5";
+  const accentClass = accent === "green"
+    ? "bg-accentGreen"
+    : accent === "red"
+      ? "bg-accentRed"
+      : accent === "yellow"
+        ? "bg-accentYellow"
+        : "bg-accentBlue";
 
   return (
-    <div className={className}>
-      <div className="mono-caps">{label}</div>
-      <div className={cn(
-        "mt-5 font-display text-[48px] leading-none tracking-[-0.035em] tabular-nums",
-        tone === "dark" ? "text-text" : "text-ink"
-      )}>
-        {value.toLocaleString()}
-      </div>
-      {sub && (
-        <div className={cn("mt-3 text-[15px] leading-[1.5]", tone === "dark" ? "text-ash" : "text-muted")}>
-          {sub}
+    <div className="surface-dark p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="grid h-10 w-10 place-items-center rounded-[8px] border border-border bg-card">
+          <span className={cn("h-3 w-3 rounded-[4px]", accentClass)} />
         </div>
-      )}
+        <div className="text-[36px] font-semibold leading-none text-text tabular-nums">{value.toLocaleString()}</div>
+      </div>
+      <div className="mt-6 text-[14px] font-medium text-text">{label}</div>
+      {sub && <div className="mt-1 text-[14px] leading-[1.6] text-body">{sub}</div>}
     </div>
   );
 }
@@ -155,32 +191,37 @@ export function Card({
   title,
   children,
   className = "",
-  tone = "dark",
+  tone = "surface",
+  hint,
 }: {
   title: string;
   children: React.ReactNode;
   className?: string;
-  tone?: "dark" | "light" | "paper";
+  tone?: "surface" | "elevated" | "card";
+  hint?: string;
 }) {
   return (
     <div
       className={cn(
-        tone === "light" ? "surface-light" : tone === "paper" ? "surface-paper" : "surface-dark",
-        "p-6",
+        "overflow-hidden rounded-[10px] border border-border",
+        tone === "elevated" ? "bg-elevated" : tone === "card" ? "bg-card" : "bg-panel",
         className,
       )}
     >
-      <div className="mono-caps mb-6">{title}</div>
-      {children}
+      <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div className="text-[16px] font-medium text-text">{title}</div>
+        {hint && <div className="text-[13px] text-muted">{hint}</div>}
+      </div>
+      <div className="p-5">{children}</div>
     </div>
   );
 }
 
 function Row({ label, value, bad }: { label: string; value: number; bad?: boolean }) {
   return (
-    <div className="flex justify-between border-b border-border py-3 text-[15px] leading-[1.5] last:border-b-0">
-      <span className="text-ash">{label}</span>
-      <span className={cn("tabular-nums", bad ? "text-err" : "text-text")}>{value}</span>
+    <div className="flex items-center justify-between border-b border-border py-3 text-[15px] leading-[1.6] last:border-b-0">
+      <span className="text-body">{label}</span>
+      <span className={cn("tabular-nums font-medium", bad ? "text-accentRed" : "text-text")}>{value}</span>
     </div>
   );
 }

@@ -157,15 +157,15 @@ export function DownloadsPage() {
   return (
     <div className="space-y-6">
       <Header
-        eyebrow="Queue and delivery"
-        title="Delivery lanes"
-        subtitle="Priority admin jobs, live yt-dlp telemetry, and Telegram delivery tracking in one editorial queue view."
+        eyebrow="Downloads"
+        title="Delivery lanes with live download and Telegram upload telemetry."
+        subtitle="Priority admin jobs, yt-dlp progress, and Telegram delivery tracking all stay in the same dark command surface."
         right={
           <div className="flex flex-wrap gap-2">
-            <span className="inline-flex items-center rounded-full border border-border bg-panel px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em] text-ash">
+            <span className="inline-flex items-center rounded-[8px] border border-border bg-panel px-3 py-2 text-[13px] text-body">
               200 recent jobs
             </span>
-            <span className="inline-flex items-center rounded-full border border-border bg-panel px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em] text-ash">
+            <span className="inline-flex items-center rounded-[8px] border border-border bg-panel px-3 py-2 text-[13px] text-body">
               refreshes every 5s
             </span>
           </div>
@@ -173,23 +173,23 @@ export function DownloadsPage() {
       />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Active lane" value={summary.active} sub={`${summary.downloading} pulling · ${summary.uploading} pushing`} tone="dark" />
-        <MetricCard label="Admin priority" value={summary.admin} sub="Jobs currently occupying the fast lane" tone="brand" />
-        <MetricCard label="Completed" value={summary.completed} sub={`${formatBytes(summary.bytes)} archived in recent history`} tone="light" />
+        <MetricCard label="Active lane" value={summary.active} sub={`${summary.downloading} pulling · ${summary.uploading} pushing`} tone="blue" />
+        <MetricCard label="Admin priority" value={summary.admin} sub="Jobs currently occupying the fast lane" tone="white" />
+        <MetricCard label="Completed" value={summary.completed} sub={`${formatBytes(summary.bytes)} archived in recent history`} tone="green" />
         <MetricCard
           label="Failures"
           value={summary.failed}
           sub={summary.failed > 0 ? "Needs review or retry" : "No visible queue faults"}
-          tone={summary.failed > 0 ? "danger" : "paper"}
+          tone={summary.failed > 0 ? "red" : "yellow"}
         />
       </div>
 
       <div className="space-y-3">
         {(data?.length ?? 0) === 0 ? (
-          <div className="surface-paper px-6 py-12 text-center">
-            <div className="mono-caps">Queue is quiet</div>
-            <div className="mt-4 text-[40px] leading-[0.98] tracking-[-0.03em] text-ink">No downloads yet</div>
-            <div className="mx-auto mt-3 max-w-xl text-[15px] leading-[1.5] text-muted">
+          <div className="surface-dark px-6 py-12 text-center">
+            <div className="text-[13px] font-medium text-muted">Queue is quiet</div>
+            <div className="mt-4 text-[38px] font-semibold leading-[1.05] tracking-[-0.03em] text-text">No downloads yet</div>
+            <div className="mx-auto mt-3 max-w-xl text-[15px] leading-[1.6] text-body">
               Send a YouTube link to the Telegram bot and it will appear here with quality choice,
               yt-dlp progress, and Telegram delivery state.
             </div>
@@ -199,11 +199,11 @@ export function DownloadsPage() {
             {rows.map(({ download, live, status, progress }) => (
               <article
                 key={download.video_id}
-                className="group overflow-hidden rounded-[12px] border border-hairline bg-light text-ink shadow-softdrop"
+                className="group overflow-hidden rounded-[12px] border border-border bg-panel text-text"
                 style={{ contentVisibility: "auto", containIntrinsicSize: "260px" }}
               >
                 <div className="grid gap-4 p-4 xl:grid-cols-[240px_minmax(0,1fr)_180px] xl:items-start xl:p-5">
-                  <div className="relative aspect-video overflow-hidden rounded-[6px] border border-hairline bg-paper">
+                  <div className="relative aspect-video overflow-hidden rounded-[10px] border border-border bg-card">
                     {download.thumbnail_url ? (
                       <img
                         src={download.thumbnail_url}
@@ -211,7 +211,7 @@ export function DownloadsPage() {
                         alt=""
                       />
                     ) : (
-                      <div className="h-full w-full bg-[radial-gradient(circle_at_top,rgba(60,71,88,.16),transparent_60%)]" />
+                      <div className="h-full w-full bg-[radial-gradient(circle_at_top,rgba(255,255,255,.08),transparent_60%)]" />
                     )}
                     <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-2 p-3">
                       <SourceBadge requesterChatId={download.requester_chat_id} />
@@ -228,12 +228,12 @@ export function DownloadsPage() {
                         href={download.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="line-clamp-2 text-[28px] leading-[1.02] tracking-[-0.03em] text-ink hover:text-accent"
+                        className="line-clamp-2 text-[24px] font-semibold leading-[1.15] tracking-[-0.02em] text-text hover:text-white"
                       >
                         {download.title || download.video_id}
                       </a>
                     ) : (
-                      <div className="line-clamp-2 text-[28px] leading-[1.02] tracking-[-0.03em] text-ink">
+                      <div className="line-clamp-2 text-[24px] font-semibold leading-[1.15] tracking-[-0.02em] text-text">
                         {download.title || download.video_id}
                       </div>
                     )}
@@ -257,23 +257,23 @@ export function DownloadsPage() {
                       live?.status === "downloading" ||
                       status === "uploading" ||
                       status === "downloading") && (
-                      <div className="mt-4 rounded-[6px] border border-hairline bg-paper p-4">
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted">
+                      <div className="mt-4 rounded-[10px] border border-border bg-card p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-body">
                           <span>{live?.progress_text || (status === "uploading" ? "Uploading to Telegram..." : "Downloading with yt-dlp...")}</span>
                           <span className="tabular-nums">{typeof progress === "number" ? `${progress}%` : "syncing"}</span>
                         </div>
-                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-light">
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-panel">
                           <div
                             className={cn(
                               "h-full rounded-full transition-[width] duration-300",
-                              status === "uploading" ? "bg-accent" : "bg-ink",
+                              status === "uploading" ? "bg-accentBlue" : "bg-white",
                               typeof progress !== "number" && "w-1/3 animate-pulse",
                             )}
                             style={typeof progress === "number" ? { width: `${progress}%` } : undefined}
                           />
                         </div>
                         {(live?.speed_text || live?.eta_text || live?.part) && (
-                          <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted">
+                          <div className="mt-2 flex flex-wrap gap-3 text-[12px] text-muted">
                             {live?.speed_text && <span>Speed {live.speed_text}</span>}
                             {live?.eta_text && <span>ETA {live.eta_text}</span>}
                             {live?.part && live.total_parts && live.total_parts > 1 && (
@@ -285,7 +285,7 @@ export function DownloadsPage() {
                     )}
 
                     {(live?.error || download.error) && (
-                      <div className="mt-3 rounded-[6px] border border-err/30 bg-err/5 px-3 py-3 font-mono text-[11px] leading-relaxed text-err">
+                      <div className="mt-3 rounded-[10px] border border-err/30 bg-err/10 px-3 py-3 text-[12px] leading-relaxed text-err">
                         {live?.error || download.error}
                       </div>
                     )}
@@ -299,7 +299,7 @@ export function DownloadsPage() {
                     </div>
                     <button
                       onClick={() => retry.mutate(download.video_id)}
-                      className="button-secondary-light gap-2"
+                      className="button-secondary-dark gap-2"
                       title="Retry"
                     >
                       <RefreshCw size={14} />
@@ -317,45 +317,54 @@ export function DownloadsPage() {
 }
 
 function StatusBadge({ s }: { s: string }) {
-  const color = s === "completed" || s === "uploaded"
-    ? "border-ok bg-ok text-ink"
+  const dot = s === "completed" || s === "uploaded"
+    ? "bg-accentGreen"
     : s === "upload_failed" || s === "failed"
-      ? "border-err bg-err text-text"
+      ? "bg-accentRed"
       : s === "uploading"
-        ? "border-accent bg-accent text-ink"
+        ? "bg-accentBlue"
         : s === "downloading"
-          ? "border-linkBlueSoft bg-linkBlueSoft text-ink"
-          : "border-border bg-bg/90 text-text";
+          ? "bg-white"
+          : "bg-white/45";
 
-  return <span className={cn("inline-flex items-center rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-[0.12em]", color)}>{s}</span>;
+  return (
+    <span className="inline-flex items-center gap-2 rounded-[8px] border border-white/12 bg-bg/80 px-3 py-1.5 text-[12px] text-text backdrop-blur">
+      <span className={cn("h-2 w-2 rounded-full", dot)} />
+      {s.replace(/_/g, " ")}
+    </span>
+  );
 }
 
 function SourceBadge({ requesterChatId }: { requesterChatId?: number | null }) {
   const label = requesterChatId ? "admin link" : "auto like";
-  const color = requesterChatId ? "border-accent bg-accent text-ink" : "border-border bg-bg/90 text-text";
-  return <span className={cn("inline-flex items-center rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-[0.12em]", color)}>{label}</span>;
+  return (
+    <span className="inline-flex items-center gap-2 rounded-[8px] border border-white/12 bg-bg/80 px-3 py-1.5 text-[12px] text-text backdrop-blur">
+      <span className={cn("h-2 w-2 rounded-full", requesterChatId ? "bg-white" : "bg-white/45")} />
+      {label}
+    </span>
+  );
 }
 
 function DeliveryBadge({ status, requesterChatId }: { status: string; requesterChatId?: number | null }) {
   if (status === "uploading") {
-    return <span className="rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-[13px] text-ink">Uploading to Telegram...</span>;
+    return <span className="rounded-[8px] border border-border bg-card px-3 py-1.5 text-[13px] text-body">Uploading to Telegram...</span>;
   }
   if (status === "downloading") {
-    return <span className="rounded-full border border-linkBlue/20 bg-linkBlue/5 px-3 py-1 text-[13px] text-linkBlue">Downloading with yt-dlp...</span>;
+    return <span className="rounded-[8px] border border-border bg-card px-3 py-1.5 text-[13px] text-body">Downloading with yt-dlp...</span>;
   }
   if (status === "uploaded") {
-    return <span className="rounded-full border border-ok/20 bg-ok/10 px-3 py-1 text-[13px] text-ink">Uploaded to {requesterChatId ? "admin DM" : "likes chat"}</span>;
+    return <span className="rounded-[8px] border border-border bg-card px-3 py-1.5 text-[13px] text-text">Uploaded to {requesterChatId ? "admin DM" : "likes chat"}</span>;
   }
   if (status === "upload_failed") {
-    return <span className="rounded-full border border-err/20 bg-err/5 px-3 py-1 text-[13px] text-err">Telegram upload failed</span>;
+    return <span className="rounded-[8px] border border-err/30 bg-err/10 px-3 py-1.5 text-[13px] text-err">Telegram upload failed</span>;
   }
   if (status === "failed") {
-    return <span className="rounded-full border border-err/20 bg-err/5 px-3 py-1 text-[13px] text-err">Download failed</span>;
+    return <span className="rounded-[8px] border border-err/30 bg-err/10 px-3 py-1.5 text-[13px] text-err">Download failed</span>;
   }
   if (status === "completed") {
-    return <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-[13px] text-muted">Download complete</span>;
+    return <span className="rounded-[8px] border border-border bg-card px-3 py-1.5 text-[13px] text-body">Download complete</span>;
   }
-  return <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-[13px] text-muted">Queued for processing</span>;
+  return <span className="rounded-[8px] border border-border bg-card px-3 py-1.5 text-[13px] text-body">Queued for processing</span>;
 }
 
 function progressPercent(live?: LiveUploadState) {
@@ -372,49 +381,52 @@ function MetricCard({
   label,
   value,
   sub,
-  tone = "dark",
+  tone = "blue",
 }: {
   label: string;
   value: number;
   sub: string;
-  tone?: "dark" | "brand" | "light" | "paper" | "danger";
+  tone?: "blue" | "white" | "green" | "yellow" | "red";
 }) {
-  const cardClass = tone === "brand"
-    ? "rounded-[12px] border border-accent bg-accent p-5 text-ink"
-    : tone === "light"
-      ? "surface-light p-5"
-      : tone === "paper"
-        ? "surface-paper p-5"
-        : tone === "danger"
-          ? "rounded-[12px] border border-err/25 bg-[#fff7f6] p-5 text-ink shadow-softdrop"
-          : "surface-dark p-5";
+  const accentClass = tone === "white"
+    ? "bg-white"
+    : tone === "green"
+      ? "bg-accentGreen"
+      : tone === "yellow"
+        ? "bg-accentYellow"
+        : tone === "red"
+          ? "bg-accentRed"
+          : "bg-accentBlue";
 
   return (
-    <div className={cardClass}>
-      <div className="mono-caps">{label}</div>
-      <div className={cn("mt-5 font-display text-[48px] leading-none tracking-[-0.035em] tabular-nums", tone === "dark" ? "text-text" : "text-ink")}>
-        {value.toLocaleString()}
+    <div className="surface-dark p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="grid h-10 w-10 place-items-center rounded-[8px] border border-border bg-card">
+          <span className={cn("h-3 w-3 rounded-[4px]", accentClass)} />
+        </div>
+        <div className="text-[36px] font-semibold leading-none text-text tabular-nums">{value.toLocaleString()}</div>
       </div>
-      <div className={cn("mt-3 text-[15px] leading-[1.5]", tone === "dark" ? "text-ash" : "text-muted")}>{sub}</div>
+      <div className="mt-6 text-[14px] font-medium text-text">{label}</div>
+      <div className="mt-1 text-[14px] leading-[1.6] text-body">{sub}</div>
     </div>
   );
 }
 
 function MetaPill({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "subtle" | "warning" }) {
   const toneClass = tone === "warning"
-    ? "border-warn/30 bg-warn/10 text-ink"
+    ? "text-accentYellow"
     : tone === "subtle"
-      ? "border-hairline bg-paper text-muted"
-      : "border-hairline bg-paper text-ink";
+      ? "text-muted"
+      : "text-body";
 
-  return <span className={cn("rounded-full border px-3 py-1 text-[13px]", toneClass)}>{children}</span>;
+  return <span className={cn("rounded-[8px] border border-border bg-card px-3 py-1.5 text-[13px]", toneClass)}>{children}</span>;
 }
 
 function InfoStack({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[6px] border border-hairline bg-paper px-3 py-3 text-left xl:text-right">
-      <div className="mono-caps">{label}</div>
-      <div className="mt-2 text-[15px] text-ink">{value}</div>
+    <div className="rounded-[8px] border border-border bg-card px-3 py-3 text-left xl:text-right">
+      <div className="text-[12px] text-muted">{label}</div>
+      <div className="mt-2 text-[15px] text-text">{value}</div>
     </div>
   );
 }

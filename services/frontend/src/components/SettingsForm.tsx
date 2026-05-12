@@ -42,7 +42,7 @@ export function SettingsForm({
           <button
             type="button"
             onClick={onReveal}
-            className="button-secondary-light gap-2"
+            className="button-secondary-dark gap-2"
           >
             {reveal ? <EyeOff size={14} /> : <Eye size={14} />}
             {reveal ? "hide secret values" : "reveal saved secrets"}
@@ -74,16 +74,16 @@ function SettingField({
     <div className="grid grid-cols-1 gap-4 px-6 py-6 xl:grid-cols-[300px_1fr]">
       <div>
         <div className="flex items-center gap-2">
-          <div className="text-[20px] leading-[1.2] tracking-[-0.01em] text-ink">{settingLabel(setting.key)}</div>
+          <div className="text-[18px] font-medium leading-[1.4] text-text">{settingLabel(setting.key)}</div>
           {meta?.required && (
-            <span className="rounded-full border border-ink bg-ink px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-text">
+            <span className="rounded-[6px] border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-body">
               required
             </span>
           )}
         </div>
-        <div className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted">{setting.key}</div>
+        <div className="mt-2 text-[12px] text-stone">{setting.key}</div>
         {settingHelp(setting) && (
-          <div className="mt-3 max-w-sm text-[14px] leading-[1.5] text-muted">{settingHelp(setting)}</div>
+          <div className="mt-3 max-w-sm text-[14px] leading-[1.6] text-body">{settingHelp(setting)}</div>
         )}
       </div>
       <div>
@@ -94,8 +94,9 @@ function SettingField({
             placeholder={meta?.placeholder}
             spellCheck={false}
             className={cn(
-              "textarea-light resize-y font-mono",
-              error ? "border-err" : dirty ? "border-ink" : "border-hairline",
+              "textarea-dark resize-y",
+              setting.is_secret && "font-mono",
+              error ? "border-err" : dirty ? "border-white/15" : "border-border",
             )}
           />
         ) : (
@@ -106,9 +107,9 @@ function SettingField({
             placeholder={meta?.placeholder}
             spellCheck={false}
             className={cn(
-              "input-light",
+              "input-dark",
               setting.is_secret && "font-mono",
-              error ? "border-err" : dirty ? "border-ink" : "border-hairline",
+              error ? "border-err" : dirty ? "border-white/15" : "border-border",
             )}
           />
         )}

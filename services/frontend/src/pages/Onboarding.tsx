@@ -102,7 +102,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   if (settings.isLoading || status.isLoading) {
     return (
       <div className="min-h-screen grid place-items-center px-4 bg-bg text-text">
-        <Loader2 className="text-accent animate-spin" />
+        <Loader2 className="text-white animate-spin" />
       </div>
     );
   }
@@ -110,22 +110,39 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   return (
     <div className="min-h-screen bg-bg text-text">
       <div className="page-container py-8 md:py-10 lg:py-12">
-        <header className="mb-10 border-b border-border pb-10">
-          <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
-            <div>
-              <div className="flex items-center gap-3">
-                <Logo className="h-4 w-4" />
-                <div className="font-display text-[28px] leading-none tracking-[-0.04em]">Yagami</div>
+        <div className="hero-stripe-band mb-8 rounded-[16px] p-px">
+          <header className="command-card overflow-hidden">
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3 text-[12px] text-muted">
+              <span className="h-2 w-2 rounded-full bg-white/55" />
+              <span className="h-2 w-2 rounded-full bg-white/35" />
+              <span className="h-2 w-2 rounded-full bg-white/15" />
+              <span className="ml-3 font-medium text-body">Required setup</span>
+              <div className="ml-auto flex items-center gap-2">
+                <span className="keycap">⌘</span>
+                <span className="keycap">↵</span>
               </div>
-              <div className="mono-eyebrow mt-8">Required setup</div>
-              <h1 className="editorial-display mt-4 text-[clamp(3.5rem,8vw,6rem)] max-w-4xl">Finish the operator handoff.</h1>
-              <p className="mt-5 max-w-2xl text-[18px] leading-[1.5] text-ash">
-                Complete the required integrations before opening the dashboard.
-              </p>
             </div>
-            <ReadinessPill ready={ready} completed={completedCount(status.data)} total={REQUIRED_STATUS_KEYS.length} />
-          </div>
-        </header>
+
+            <div className="grid gap-8 px-6 py-6 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+              <div>
+                <div className="flex items-center gap-3">
+                  <Logo className="h-10 w-10" />
+                  <div>
+                    <div className="text-[14px] text-body">Yagami</div>
+                    <div className="text-[24px] font-semibold leading-none text-text">Finish the operator handoff.</div>
+                  </div>
+                </div>
+                <h1 className="mt-8 max-w-4xl text-[clamp(2.5rem,5vw,4rem)] font-semibold leading-[1.1] text-text">
+                  Connect the required integrations before opening the dashboard.
+                </h1>
+                <p className="mt-4 max-w-2xl text-[18px] leading-[1.6] text-body">
+                  The setup flow keeps the same command-surface language as the rest of the app: dark-only chrome, hairline borders, and one primary action at a time.
+                </p>
+              </div>
+              <ReadinessPill ready={ready} completed={completedCount(status.data)} total={REQUIRED_STATUS_KEYS.length} />
+            </div>
+          </header>
+        </div>
 
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_1fr]">
           <aside className="space-y-2">
@@ -137,12 +154,12 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                   key={section.id}
                   onClick={() => setStep(index)}
                   className={cn(
-                    "w-full rounded-[12px] border px-4 py-4 text-left transition",
-                    active ? "border-accent bg-panel text-text" : "border-border bg-panel text-ash hover:text-text",
+                    "w-full rounded-[10px] border px-4 py-4 text-left transition",
+                    active ? "border-white/12 bg-elevated text-text" : "border-border bg-panel text-body hover:bg-elevated hover:text-text",
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    <span className={cn("h-2 w-2 rounded-full", complete ? "bg-ok" : "bg-warn")} />
+                    <span className={cn("h-2 w-2 rounded-full", complete ? "bg-accentGreen" : "bg-accentYellow")} />
                     <span className="text-[16px] leading-[1.4]">{section.title}</span>
                   </div>
                   <div className="mt-2 text-[13px] leading-[1.5] text-muted">{section.summary}</div>
@@ -151,12 +168,12 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
             })}
           </aside>
 
-          <main className="surface-light overflow-hidden">
-            <div className="border-b border-hairline px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <main className="command-card overflow-hidden">
+            <div className="border-b border-border px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <div className="mono-caps">Step {step + 1} of {SETUP_SECTIONS.length}</div>
-                <h1 className="mt-2 text-[32px] leading-[1.05] tracking-[-0.02em] text-ink">{current.title}</h1>
-                <p className="mt-2 text-[15px] leading-[1.5] text-muted">{current.summary}</p>
+                <div className="text-[13px] font-medium text-muted">Step {step + 1} of {SETUP_SECTIONS.length}</div>
+                <h1 className="mt-2 text-[28px] font-semibold leading-[1.15] text-text">{current.title}</h1>
+                <p className="mt-2 text-[15px] leading-[1.6] text-body">{current.summary}</p>
               </div>
               {current.id === "google" && (
                 <button
@@ -189,8 +206,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               }}
             />
 
-            <div className="border-t border-hairline px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="text-[13px] text-muted">
+            <div className="border-t border-border px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-[13px] text-body">
                 {dirtyCount > 0 ? `${dirtyCount} unsaved change${dirtyCount === 1 ? "" : "s"} in this step.` : stepHint(current.id, status.data)}
               </div>
               <div className="flex items-center justify-end gap-2">
@@ -234,11 +251,11 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         </div>
 
         {!ready && (
-          <section className="surface-paper mt-6 p-6">
-            <div className="mono-caps mb-4">Still needed</div>
+          <section className="surface-dark mt-6 p-6">
+            <div className="text-[14px] font-medium text-text">Still needed</div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {missingLabels(status.data).map((label) => (
-                <div key={label} className="rounded-[6px] border border-hairline bg-light px-3 py-3 text-[13px] text-muted">{label}</div>
+                <div key={label} className="rounded-[8px] border border-border bg-card px-3 py-3 text-[13px] text-body">{label}</div>
               ))}
             </div>
           </section>
@@ -251,11 +268,11 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 function ReadinessPill({ ready, completed, total }: { ready: boolean; completed: number; total: number }) {
   return (
     <div className={cn(
-      "inline-flex items-center gap-3 rounded-full border bg-panel px-5 py-3",
-      ready ? "border-ok/40 text-text" : "border-border text-text",
+      "inline-flex items-center gap-3 rounded-[10px] border bg-panel px-4 py-3",
+      ready ? "border-white/12 text-text" : "border-border text-text",
     )}>
-      <span className={cn("h-2 w-2 rounded-full", ready ? "bg-ok" : "bg-warn")} />
-      <span className="mono-caps text-ash">{ready ? "Ready" : `${completed}/${total} required checks complete`}</span>
+      <span className={cn("h-2 w-2 rounded-full", ready ? "bg-accentGreen" : "bg-accentYellow")} />
+      <span className="text-[13px] text-body">{ready ? "Ready" : `${completed}/${total} required checks complete`}</span>
     </div>
   );
 }
