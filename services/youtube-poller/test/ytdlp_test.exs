@@ -34,6 +34,39 @@ defmodule YoutubePoller.YtdlpTest do
       assert data["duration"] == 125
     end
 
+    test "normalize_history_entry extracts thumbnail from thumbnails array" do
+      entry =
+        YoutubePoller.Ytdlp.normalize_history_entry(%{
+          "id" => "abc123",
+          "title" => "Test Video",
+          "channel" => "TestChan",
+          "channel_id" => "UC123",
+          "duration" => 125,
+          "thumbnails" => [
+            %{"url" => "https://img.example/small.jpg", "width" => 168, "height" => 94},
+            %{"url" => "https://img.example/large.jpg", "width" => 336, "height" => 188}
+          ]
+        })
+
+      assert entry.thumbnail == "https://img.example/large.jpg"
+      assert entry.channel == "TestChan"
+      assert entry.channel_id == "UC123"
+    end
+
+    test "normalize_history_entry prefers explicit thumbnail when present" do
+      entry =
+        YoutubePoller.Ytdlp.normalize_history_entry(%{
+          "id" => "abc123",
+          "title" => "Test Video",
+          "thumbnail" => "https://img.example/explicit.jpg",
+          "thumbnails" => [
+            %{"url" => "https://img.example/other.jpg", "width" => 336, "height" => 188}
+          ]
+        })
+
+      assert entry.thumbnail == "https://img.example/explicit.jpg"
+    end
+
     test "yt-dlp JSON can have uploader instead of channel" do
       # Some videos use uploader/uploader_id instead of channel/channel_id
       data = %{

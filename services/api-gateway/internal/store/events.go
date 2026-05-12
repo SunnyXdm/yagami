@@ -73,9 +73,23 @@ func (s *Store) ListEvents(ctx context.Context, q EventQuery) ([]Event, error) {
 		if err := rows.Scan(&e.ID, &e.EventType, &e.VideoID, &e.ChannelID, &e.Title, &e.ChannelTitle, &e.ThumbnailURL, &e.DurationSecs, &e.CreatedAt); err != nil {
 			return nil, err
 		}
+		hydrateEventThumbnail(&e)
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+func hydrateEventThumbnail(e *Event) {
+	if e == nil || e.ThumbnailURL != nil || e.VideoID == nil || *e.VideoID == "" {
+		return
+	}
+
+	thumbnailURL := youtubeVideoThumbnailURL(*e.VideoID)
+	e.ThumbnailURL = &thumbnailURL
+}
+
+func youtubeVideoThumbnailURL(videoID string) string {
+	return "https://i.ytimg.com/vi/" + videoID + "/hqdefault.jpg"
 }
 
 type Stats struct {

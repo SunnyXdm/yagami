@@ -63,19 +63,43 @@ defmodule YoutubePoller.Ytdlp do
   defp parse_line(line) do
     case Jason.decode(line) do
       {:ok, data} ->
-        %{
-          video_id: data["id"],
-          title: data["title"],
-          channel: data["channel"] || data["uploader"],
-          channel_id: data["channel_id"] || data["uploader_id"],
-          duration: format_duration(data["duration"]),
-          url: data["url"] || "https://www.youtube.com/watch?v=#{data["id"]}",
-          thumbnail: data["thumbnail"]
-        }
+        normalize_history_entry(data)
 
       {:error, _} ->
         # Skip non-JSON lines (yt-dlp sometimes prints warnings)
         nil
+    end
+  end
+
+  @doc false
+  def normalize_history_entry(data) when is_map(data) do
+    %{
+      video_id: data["id"],
+      title: data["title"],
+      channel: data["channel"] || data["uploader"],
+      channel_id: data["channel_id"] || data["uploader_id"],
+      duration: format_duration(data["duration"]),
+      url: data["url"] || "https://www.youtube.com/watch?v=#{data["id"]}",
+      thumbnail: best_thumbnail(data)
+    }
+  end
+
+  defp best_thumbnail(data) do
+    case data["thumbnail"] do
+      thumbnail when is_binary(thumbnail) and thumbnail != "" ->
+        thumbnail
+
+      _ ->
+        data["thumbnails"]
+        |> List.wrap()
+        |> Enum.filter(&is_map/1)
+        |> Enum.sort_by(fn thumb -> {(thumb["width"] || 0) * (thumb["height"] || 0), thumb["width"] || 0} end, :desc)
+        |> Enum.find_value(fn thumb ->
+          case thumb["url"] do
+            url when is_binary(url) and url != "" -> url
+            _ -> nil
+          end
+        end)
     end
   end
 
