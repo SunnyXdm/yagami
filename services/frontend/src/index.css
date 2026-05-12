@@ -2,33 +2,56 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "waldenburgNormal";
+  src:
+    local("waldenburgNormal"),
+    local("ABC Walden"),
+    local("ABCWalden-Regular"),
+    local("ABC Walden Regular");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
-  --bg: 7 10 16;
-  --panel: 18 22 30;
-  --surface: 28 35 47;
-  --border: 53 61 77;
-  --muted: 151 160 181;
-  --text: 244 239 230;
-  --accent: 255 106 66;
-  --accent2: 84 146 255;
-  --ok: 74 201 117;
-  --warn: 245 171 73;
-  --err: 255 96 96;
+  --canvas: 11 11 11;
+  --canvas-soft: 33 33 33;
+  --canvas-light: 255 255 255;
+  --canvas-paper: 237 237 237;
+  --hairline-soft: 53 53 53;
+  --hairline: 237 237 237;
+  --brand: 243 100 88;
+  --brand-deep: 221 0 0;
+  --ink: 11 11 11;
+  --ink-soft: 33 33 33;
+  --graphite: 53 53 53;
+  --slate: 60 71 88;
+  --slate-soft: 80 91 108;
+  --mute: 121 121 121;
+  --ash: 185 185 185;
+  --on-primary: 255 255 255;
+  --link-blue: 0 82 239;
+  --link-blue-soft: 85 190 255;
+  --success: 55 205 132;
+  --warn: 212 158 66;
+  --error: 221 0 0;
+  --surface-blue-bg: 175 227 255;
 }
 
 html, body, #root { height: 100%; }
 html {
-  background: rgb(var(--bg));
+  background: rgb(var(--canvas));
 }
 body {
   @apply text-text font-sans antialiased;
   background:
-    radial-gradient(820px 420px at 0% -10%, rgba(255, 106, 66, 0.22), transparent 60%),
-    radial-gradient(960px 540px at 100% 0%, rgba(84, 146, 255, 0.2), transparent 58%),
-    linear-gradient(180deg, rgba(24, 30, 42, 0.75), rgba(7, 10, 16, 1));
+    radial-gradient(920px 420px at 100% -5%, rgba(60, 71, 88, 0.34), transparent 48%),
+    radial-gradient(760px 360px at 0% 0%, rgba(80, 91, 108, 0.18), transparent 54%),
+    linear-gradient(180deg, rgba(11, 11, 11, 1), rgba(11, 11, 11, 1));
   background-attachment: fixed;
-  font-feature-settings: "ss01" 1, "cv05" 1, "tnum" 1;
+  font-feature-settings: "tnum" 1;
   overflow-x: hidden;
   position: relative;
 }
@@ -43,19 +66,18 @@ body::after {
 
 body::before {
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
-  background-size: 72px 72px;
-  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 84%);
-  opacity: 0.16;
+    radial-gradient(circle at 24% 22%, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px),
+    radial-gradient(circle at 68% 36%, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px);
+  background-size: 32px 32px, 44px 44px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.55), transparent 88%);
+  opacity: 0.22;
 }
 
 body::after {
   background:
-    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.06), transparent 18%),
-    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.05), transparent 16%),
-    radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.03), transparent 22%);
-  opacity: 0.55;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18%),
+    linear-gradient(180deg, transparent 0%, rgba(255, 255, 255, 0.015) 100%);
+  opacity: 0.4;
 }
 
 #root {
@@ -63,16 +85,79 @@ body::after {
   position: relative;
 }
 
-::selection { background: rgba(84, 146, 255, 0.38); color: rgb(var(--text)); }
-
-/* tiny utility for subtle dividers */
-.divider { border-color: rgba(255,255,255,0.06); }
+::selection { background: rgba(243, 100, 88, 0.26); color: rgb(var(--on-primary)); }
 
 a {
   transition: color 160ms ease, opacity 160ms ease, border-color 160ms ease;
 }
 
-/* nice scrollbar */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-thumb { background: rgba(53, 61, 77, 0.9); border-radius: 6px; }
-*::-webkit-scrollbar-thumb:hover { background: rgba(84, 146, 255, 0.55); }
+*::-webkit-scrollbar-thumb { background: rgba(53, 53, 53, 0.95); border-radius: 6px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(80, 91, 108, 0.95); }
+
+@layer components {
+  .page-container {
+    @apply mx-auto max-w-[1640px] px-4 sm:px-6 lg:px-8;
+  }
+
+  .mono-eyebrow {
+    @apply font-mono text-[13px] uppercase tracking-[0.16em] text-muted;
+  }
+
+  .mono-caps {
+    @apply font-mono text-[11px] uppercase tracking-[0.14em] text-muted;
+  }
+
+  .editorial-display {
+    @apply font-display font-normal leading-[0.95] tracking-[-0.04em] text-text;
+    font-feature-settings: "cv01" 1, "cv11" 1, "cv12" 1, "cv13" 1, "ss07" 1, "tnum" 1;
+  }
+
+  .surface-dark {
+    @apply rounded-[12px] border border-border bg-panel text-text;
+  }
+
+  .surface-light {
+    @apply rounded-[12px] border border-hairline bg-light text-ink shadow-softdrop;
+  }
+
+  .surface-paper {
+    @apply rounded-[12px] border border-hairline bg-paper text-ink;
+  }
+
+  .button-primary-dark {
+    @apply inline-flex h-11 items-center justify-center rounded-full border border-ink bg-light px-6 text-[16px] font-medium text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .button-primary-light {
+    @apply inline-flex h-11 items-center justify-center rounded-full border border-ink bg-ink px-6 text-[16px] font-medium text-text transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .button-brand {
+    @apply inline-flex h-11 items-center justify-center rounded-full border border-accent bg-accent px-6 text-[16px] font-medium text-ink transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .button-secondary-dark {
+    @apply inline-flex h-9 items-center justify-center rounded-[5px] border border-border bg-panel px-4 text-[13px] font-medium text-ash transition hover:border-slate hover:text-text disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .button-secondary-light {
+    @apply inline-flex h-9 items-center justify-center rounded-[5px] border border-hairline bg-light px-4 text-[13px] font-medium text-ink transition hover:bg-paper disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .input-light {
+    @apply h-11 w-full rounded-[3px] border border-hairline bg-light px-4 text-[16px] text-ink outline-none transition focus:ring-2 focus:ring-linkBlue/30;
+  }
+
+  .input-dark {
+    @apply h-11 w-full rounded-[3px] border border-border bg-bg px-4 text-[16px] text-ash outline-none transition focus:ring-2 focus:ring-linkBlueSoft/30;
+  }
+
+  .textarea-light {
+    @apply min-h-40 w-full rounded-[3px] border border-hairline bg-light px-4 py-3 text-[15px] text-ink outline-none transition focus:ring-2 focus:ring-linkBlue/30;
+  }
+
+  .textarea-dark {
+    @apply min-h-40 w-full rounded-[3px] border border-border bg-bg px-4 py-3 text-[15px] text-ash outline-none transition focus:ring-2 focus:ring-linkBlueSoft/30;
+  }
+}
