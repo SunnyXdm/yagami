@@ -11,6 +11,7 @@ import pytest
 from telegram_client.config import Config
 from telegram_client.handlers import (
     MAX_UPLOAD_BYTES,
+    TELEGRAM_UPLOAD_PART_SIZE_KB,
     handle_download_complete,
     handle_event,
     prepare_thumbnail,
@@ -41,6 +42,7 @@ def mock_tg():
     """Mock TelegramClient with async methods."""
     tg = AsyncMock()
     tg.send_message = AsyncMock()
+    tg.upload_file = AsyncMock(return_value="uploaded-file")
     tg.send_file = AsyncMock()
     return tg
 
@@ -152,10 +154,15 @@ class TestHandleDownloadComplete:
             }
             await handle_download_complete(mock_tg, -100111, data)
 
+            mock_tg.upload_file.assert_called_once()
+            upload_kwargs = mock_tg.upload_file.call_args[1]
+            assert mock_tg.upload_file.call_args[0][0] == temp_path
+            assert upload_kwargs["part_size_kb"] == TELEGRAM_UPLOAD_PART_SIZE_KB
+
             mock_tg.send_file.assert_called_once()
             call_kwargs = mock_tg.send_file.call_args[1]
             assert call_kwargs["entity"] == -100111
-            assert call_kwargs["file"] == temp_path
+            assert call_kwargs["file"] == "uploaded-file"
             assert call_kwargs["supports_streaming"] is True
             assert "Good Video" in call_kwargs["caption"]
 

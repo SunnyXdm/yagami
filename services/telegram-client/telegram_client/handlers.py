@@ -53,6 +53,7 @@ log = logging.getLogger(__name__)
 MAX_UPLOAD_BYTES = 1_950_000_000
 TELEGRAM_THUMB_MAX_DIMENSION = 320
 TELEGRAM_THUMB_MAX_BYTES = 20_000
+TELEGRAM_UPLOAD_PART_SIZE_KB = 512
 YOUTUBE_THUMB_RE = re.compile(r"(?:i\.ytimg\.com|img\.youtube\.com)/vi(?:_webp)?/([a-zA-Z0-9_-]{11})/")
 
 
@@ -157,21 +158,23 @@ async def handle_download_complete(
     part_paths: list[str] = []
     total_upload_parts = 1
     last_message_id: int | None = None
+    upload_started_at = time.monotonic()
     try:
         if file_size <= MAX_UPLOAD_BYTES:
             # Single file upload
             caption = format_video_caption(data)
-            message = await tg.send_file(
-                entity=target_chat,
-                file=file_path,
-                file_size=file_size,
-                caption=caption,
-                supports_streaming=True,
-                thumb=thumb_path,
-                attributes=video_attrs,
-                progress_callback=_make_upload_progress_callback(
+            message = await _send_uploaded_video(
+                tg,
+                target_chat,
+                file_path,
+                file_size,
+                caption,
+                thumb_path,
+                video_attrs,
+                _make_upload_progress_callback(
                     video_id,
                     nc,
+                    started_at=upload_started_at,
                     bytes_before_part=0,
                     total_bytes=file_size,
                     part=1,
@@ -179,7 +182,7 @@ async def handle_download_complete(
                 ),
             )
             last_message_id = getattr(message, "id", None)
-            log.info("Uploaded %s to Telegram successfully", video_id)
+            log.info("Uploaded %s to Telegram successfully in %s", video_id, _format_elapsed(time.monotonic() - upload_started_at, file_size))
             upload_succeeded = True
         else:
             # Split and upload in parts
@@ -197,17 +200,18 @@ async def handle_download_complete(
                 part_dur = _get_video_duration(part_path)
                 part_attrs = _make_video_attributes(video_id, part_w or video_w, part_h or video_h, part_dur)
                 part_size = os.path.getsize(part_path)
-                message = await tg.send_file(
-                    entity=target_chat,
-                    file=part_path,
-                    file_size=part_size,
-                    caption=caption,
-                    supports_streaming=True,
-                    thumb=thumb_path,
-                    attributes=part_attrs,
-                    progress_callback=_make_upload_progress_callback(
+                message = await _send_uploaded_video(
+                    tg,
+                    target_chat,
+                    part_path,
+                    part_size,
+                    caption,
+                    thumb_path,
+                    part_attrs,
+                    _make_upload_progress_callback(
                         video_id,
                         nc,
+                        started_at=upload_started_at,
                         bytes_before_part=bytes_before_part,
                         total_bytes=total_bytes,
                         part=i,
@@ -221,7 +225,7 @@ async def handle_download_complete(
                 # Clean up part file after upload
                 _safe_remove(part_path)
 
-            log.info("All %d parts of %s uploaded successfully", total, video_id)
+            log.info("All %d parts of %s uploaded successfully in %s", total, video_id, _format_elapsed(time.monotonic() - upload_started_at, total_bytes))
             upload_succeeded = True
 
         if upload_succeeded and config is not None:
@@ -276,6 +280,33 @@ async def handle_download_complete(
         if upload_succeeded:
             _safe_remove(file_path)
         _safe_remove(thumb_path)
+
+
+async def _send_uploaded_video(
+    tg: TelegramClient,
+    target_chat: int,
+    file_path: str,
+    file_size: int,
+    caption: str,
+    thumb_path: str | None,
+    video_attrs: list,
+    progress_callback,
+):
+    uploaded = await tg.upload_file(
+        file_path,
+        file_size=file_size,
+        part_size_kb=TELEGRAM_UPLOAD_PART_SIZE_KB,
+        progress_callback=progress_callback,
+    )
+    return await tg.send_file(
+        entity=target_chat,
+        file=uploaded,
+        file_size=file_size,
+        caption=caption,
+        supports_streaming=True,
+        thumb=thumb_path,
+        attributes=video_attrs,
+    )
 
 
 def _display_title(data: dict) -> str:
@@ -612,6 +643,7 @@ def _make_upload_progress_callback(
     video_id: str,
     nc: Any | None,
     *,
+    started_at: float,
     bytes_before_part: int,
     total_bytes: int,
     part: int,
@@ -631,6 +663,9 @@ def _make_upload_progress_callback(
 
         last_sent["bytes"] = sent_now
         last_sent["ts"] = now
+        elapsed = max(now - started_at, 0.001)
+        bytes_per_second = sent_now / elapsed
+        remaining = max(total_bytes - sent_now, 0)
         loop.create_task(
             _publish_download_event(
                 nc,
@@ -640,6 +675,9 @@ def _make_upload_progress_callback(
                     "status": "uploading",
                     "uploaded_bytes": sent_now,
                     "total_bytes": total_bytes,
+                    "progress_text": _format_upload_progress(sent_now, total_bytes, bytes_per_second),
+                    "speed_text": _format_rate(bytes_per_second),
+                    "eta_text": _format_eta(remaining, bytes_per_second),
                     "part": part,
                     "total_parts": total_parts,
                 },
@@ -647,6 +685,42 @@ def _make_upload_progress_callback(
         )
 
     return callback
+
+
+def _format_upload_progress(current: int, total: int, bytes_per_second: float) -> str:
+    percent = (current / total * 100) if total > 0 else 0
+    return f"Uploading to Telegram {percent:.0f}% at {_format_rate(bytes_per_second)}"
+
+
+def _format_rate(bytes_per_second: float) -> str:
+    if bytes_per_second <= 0:
+        return "0 B/s"
+    units = ["B/s", "KB/s", "MB/s", "GB/s"]
+    value = float(bytes_per_second)
+    unit = units[0]
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            break
+        value /= 1024
+    return f"{value:.1f} {unit}"
+
+
+def _format_eta(bytes_remaining: int, bytes_per_second: float) -> str | None:
+    if bytes_remaining <= 0 or bytes_per_second <= 0:
+        return None
+    seconds = int(bytes_remaining / bytes_per_second)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {seconds}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m"
+
+
+def _format_elapsed(seconds: float, total_bytes: int) -> str:
+    elapsed = max(seconds, 0.001)
+    return f"{_format_eta(int(elapsed), 1) or '0s'} ({_format_rate(total_bytes / elapsed)} average)"
 
 
 async def _publish_download_event(nc: Any | None, subject: str, payload: dict[str, Any]) -> None:

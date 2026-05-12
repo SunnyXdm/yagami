@@ -11,6 +11,7 @@ import time
 import nats
 from telethon import Button, TelegramClient, events
 from telethon.errors import FloodWaitError
+from telethon.network.connection.tcpabridged import ConnectionTcpAbridged
 from telethon.sessions import StringSession
 from telethon.tl.functions.bots import SetBotCommandsRequest
 from telethon.tl.types import BotCommand, BotCommandScopeDefault
@@ -51,6 +52,7 @@ class PendingDownloadRequest:
     url: str
     title: str
     thumbnail: str | None
+    qualities: list[dict]
     created_at: float
 
 
@@ -177,7 +179,7 @@ async def _start_bot_client(config: Config, service_status: dict[str, str]) -> T
     api_hash = config.api_hash or "eb06d4abfb49dc3eeb1aeb98ae0f581e"
 
     while True:
-        tg = TelegramClient(StringSession(), api_id, api_hash)
+        tg = TelegramClient(_bot_session_path(config), api_id, api_hash, connection=ConnectionTcpAbridged)
         tg.parse_mode = "md"
         try:
             await tg.start(bot_token=config.bot_token)
@@ -203,7 +205,7 @@ async def _start_bot_client(config: Config, service_status: dict[str, str]) -> T
 
 async def _start_user_client(config: Config, service_status: dict[str, str]) -> TelegramClient:
     while True:
-        tg = TelegramClient(StringSession(config.session_string), config.api_id, config.api_hash)
+        tg = TelegramClient(StringSession(config.session_string), config.api_id, config.api_hash, connection=ConnectionTcpAbridged)
         tg.parse_mode = "md"
         try:
             await tg.start()
@@ -238,6 +240,13 @@ def _web_url(config: Config, path: str = "") -> str:
     if not path:
         return base
     return f"{base}/{path.lstrip('/')}"
+
+
+def _bot_session_path(config: Config) -> str:
+    bot_id = config.bot_token.split(":", 1)[0] or "bot"
+    bot_id = re.sub(r"[^0-9A-Za-z_-]", "", bot_id) or "bot"
+    os.makedirs(config.session_dir, exist_ok=True)
+    return os.path.join(config.session_dir, f"telegram-bot-{bot_id}")
 
 
 def _command_list_text(config: Config) -> str:
@@ -285,6 +294,28 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
         buttons = [[Button.url("Open queue", url)]] if config.use_bot else None
         await event.reply(f"Download queue: {url}", buttons=buttons)
 
+    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/dl(?:@\w+)?\s+([A-Za-z0-9_-]{11})\s+(\S+)$"))
+    async def _text_quality_selected(event):
+        video_id = event.pattern_match.group(1)
+        quality_key = event.pattern_match.group(2).lower()
+        pending = _pending_downloads.get(video_id)
+        if quality_key == "cancel":
+            _pending_downloads.pop(video_id, None)
+            await event.reply(f"Cancelled `{video_id}`.")
+            return
+
+        if pending is None or _pending_download_expired(pending):
+            _pending_downloads.pop(video_id, None)
+            await event.reply("That quality picker expired. Send the link again.")
+            return
+
+        try:
+            label = await _queue_pending_download(nc, pending, admin, quality_key)
+        except ValueError:
+            await event.reply("Unknown quality. Use one of these commands:\n" + _text_quality_options(video_id, pending.qualities))
+            return
+        await event.reply(f"Queued `{pending.title}` at `{label}`.")
+
     @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/ping(?:@\w+)?$"))
     async def _ping(event):
         await event.reply(f"pong — uptime {_fmt_uptime(time.time() - START_TS)}")
@@ -322,20 +353,19 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
         thumbnail = probe.get("thumbnail")
 
         if not config.use_bot:
-            await _publish_download_request(
-                nc,
-                {
-                    "video_id": video_id,
-                    "title": title,
-                    "url": url,
-                    "thumbnail": thumbnail,
-                    "requester_chat_id": admin,
-                    "priority": ADMIN_REQUEST_PRIORITY,
-                },
+            _remember_pending_download(
+                PendingDownloadRequest(
+                    video_id=video_id,
+                    url=url,
+                    title=title,
+                    thumbnail=thumbnail,
+                    qualities=probe["qualities"],
+                    created_at=time.time(),
+                )
             )
             await event.reply(
-                "Quality buttons require Telegram bot mode. "
-                f"Queued `{title}` at `Best`."
+                "Inline quality buttons require Telegram bot mode. Reply with one of these commands:\n"
+                + _text_quality_options(video_id, probe["qualities"])
             )
             return
 
@@ -345,6 +375,7 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
                 url=url,
                 title=title,
                 thumbnail=thumbnail,
+                qualities=probe["qualities"],
                 created_at=time.time(),
             )
         )
@@ -378,20 +409,11 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
             await event.edit("That quality picker expired. Send the link again.")
             return
 
-        await _publish_download_request(
-            nc,
-            {
-                "video_id": pending.video_id,
-                "title": pending.title,
-                "url": pending.url,
-                "thumbnail": pending.thumbnail,
-                "requester_chat_id": admin,
-                "priority": ADMIN_REQUEST_PRIORITY,
-                "quality": None if quality_key == "best" else quality_key,
-            },
-        )
-        _pending_downloads.pop(video_id, None)
-        label = _quality_label(quality_key)
+        try:
+            label = await _queue_pending_download(nc, pending, admin, quality_key)
+        except ValueError:
+            await event.answer("Unknown quality", alert=True)
+            return
         await event.answer(f"Queued {label}")
         await event.edit(f"Queued `{pending.title}` at `{label}`.")
 
@@ -442,6 +464,27 @@ def _pending_download_expired(pending: PendingDownloadRequest) -> bool:
     return time.time() - pending.created_at > PENDING_DOWNLOAD_TTL_SECONDS
 
 
+async def _queue_pending_download(nc, pending: PendingDownloadRequest, admin: int, quality_key: str) -> str:
+    quality_key = quality_key.strip().lower()
+    available = {str(option.get("key") or "").lower() for option in pending.qualities}
+    if quality_key not in available:
+        raise ValueError(f"unknown quality {quality_key!r}")
+    await _publish_download_request(
+        nc,
+        {
+            "video_id": pending.video_id,
+            "title": pending.title,
+            "url": pending.url,
+            "thumbnail": pending.thumbnail,
+            "requester_chat_id": admin,
+            "priority": ADMIN_REQUEST_PRIORITY,
+            "quality": None if quality_key == "best" else quality_key,
+        },
+    )
+    _pending_downloads.pop(pending.video_id, None)
+    return _quality_label(quality_key)
+
+
 async def _probe_download_options(nc, video_id: str, url: str) -> dict:
     fallback = {"qualities": list(DEFAULT_QUALITY_OPTIONS), "fallback_reason": "probe_failed"}
     try:
@@ -471,11 +514,10 @@ def _normalize_quality_options(options: list[dict]) -> list[dict]:
     normalized: list[dict] = []
     for option in options:
         key = str(option.get("key") or "").strip()
-        label = str(option.get("label") or "").strip()
         if not key or key in seen:
             continue
         seen.add(key)
-        normalized.append({"key": key, "label": label or _quality_label(key)})
+        normalized.append({"key": key, "label": _quality_label(key)})
 
     if not normalized:
         return []
@@ -497,6 +539,12 @@ def _quality_label(key: str) -> str:
     if key == "best":
         return "Best"
     return f"{key}p"
+
+
+def _text_quality_options(video_id: str, qualities: list[dict]) -> str:
+    rows = [f"• `/dl {video_id} {option['key']}` — {option['label']}" for option in qualities]
+    rows.append(f"• `/dl {video_id} cancel` — Cancel")
+    return "\n".join(rows)
 
 
 def _build_quality_buttons(video_id: str, qualities: list[dict]) -> list[list[Button]]:

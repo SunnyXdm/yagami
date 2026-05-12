@@ -23,6 +23,7 @@ class Config:
     nats_url: str = "nats://nats:4222"
     database_url: str = "postgres://yagami:yagami@postgres:5432/yagami"
     web_url: str = "http://localhost:8787"
+    session_dir: str = "/app/session"
 
     @property
     def use_bot(self) -> bool:
@@ -46,6 +47,7 @@ class Config:
             "DATABASE_URL", "postgres://yagami:yagami@postgres:5432/yagami"
         )
         web_url = os.environ.get("YAGAMI_WEB_URL") or os.environ.get("WEB_URL") or "http://localhost:8787"
+        session_dir = os.environ.get("TELEGRAM_SESSION_DIR", "/app/session")
         settings = await _load_settings(database_url)
 
         def s(key: str) -> str:
@@ -69,6 +71,7 @@ class Config:
             nats_url=nats_url,
             database_url=database_url,
             web_url=web_url.rstrip("/"),
+            session_dir=session_dir,
         )
 
     @classmethod
@@ -85,6 +88,7 @@ class Config:
             nats_url=os.environ.get("NATS_URL", "nats://localhost:4222"),
             database_url=os.environ.get("DATABASE_URL", ""),
             web_url=(os.environ.get("YAGAMI_WEB_URL") or os.environ.get("WEB_URL") or "http://localhost:8787").rstrip("/"),
+            session_dir=os.environ.get("TELEGRAM_SESSION_DIR", "/app/session"),
         )
 
 
