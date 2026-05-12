@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiGet, apiPost } from "../lib/api";
-import { Header } from "./Dashboard";
-import { formatBytes, formatRelative, cn } from "../lib/utils";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
+import { apiGet, apiPost } from "../lib/api";
+import { cn, formatBytes, formatRelative } from "../lib/utils";
+import { Header } from "./Dashboard";
 
 interface Download {
   video_id: string;
@@ -58,7 +58,7 @@ export function DownloadsPage() {
       }));
     };
 
-    const onProgress = (event: MessageEvent) => {
+    const onUploadProgress = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
         if (!payload?.video_id) return;
@@ -110,7 +110,7 @@ export function DownloadsPage() {
     };
 
     es.addEventListener("download.progress", onDownloadProgress as EventListener);
-    es.addEventListener("download.upload_progress", onProgress as EventListener);
+    es.addEventListener("download.upload_progress", onUploadProgress as EventListener);
     es.addEventListener("download.complete", onDownloadComplete as EventListener);
     es.addEventListener("download.uploaded", onTerminal as EventListener);
     es.addEventListener("download.upload_failed", onTerminal as EventListener);
@@ -118,15 +118,19 @@ export function DownloadsPage() {
     return () => es.close();
   }, []);
 
-  const rows = useMemo(() => (data || []).map((download) => {
-    const live = liveUploads[download.video_id];
-    return {
-      download,
-      live,
-      status: live?.status || download.status,
-      progress: progressPercent(live),
-    };
-  }), [data, liveUploads]);
+  const rows = useMemo(
+    () =>
+      (data || []).map((download) => {
+        const live = liveUploads[download.video_id];
+        return {
+          download,
+          live,
+          status: live?.status || download.status,
+          progress: progressPercent(live),
+        };
+      }),
+    [data, liveUploads],
+  );
 
   const summary = useMemo(() => {
     return rows.reduce(
@@ -141,7 +145,7 @@ export function DownloadsPage() {
         acc.bytes += download.file_size || 0;
         return acc;
       },
-      { active: 0, downloading: 0, uploading: 0, completed: 0, failed: 0, admin: 0, bytes: 0 }
+      { active: 0, downloading: 0, uploading: 0, completed: 0, failed: 0, admin: 0, bytes: 0 },
     );
   }, [rows]);
 
@@ -153,97 +157,117 @@ export function DownloadsPage() {
   return (
     <div className="space-y-6">
       <Header
-        title="Downloads"
-        subtitle="Priority lane for admin links, live yt-dlp telemetry, and Telegram delivery tracking in one view."
+        eyebrow="Queue and delivery"
+        title="Delivery lanes"
+        subtitle="Priority admin jobs, live yt-dlp telemetry, and Telegram delivery tracking in one editorial queue view."
         right={
-          <div className="flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.26em] text-muted">
-            <span className="rounded-full border border-border/70 bg-bg/45 px-3 py-2">200 recent jobs</span>
-            <span className="rounded-full border border-border/70 bg-bg/45 px-3 py-2">refreshes every 5s</span>
+          <div className="flex flex-wrap gap-2">
+            <span className="inline-flex items-center rounded-full border border-border bg-panel px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em] text-ash">
+              200 recent jobs
+            </span>
+            <span className="inline-flex items-center rounded-full border border-border bg-panel px-4 py-3 font-mono text-[11px] uppercase tracking-[0.12em] text-ash">
+              refreshes every 5s
+            </span>
           </div>
         }
       />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Active lane" value={summary.active} sub={`${summary.downloading} pulling · ${summary.uploading} pushing`} tone="warm" />
-        <MetricCard label="Admin priority" value={summary.admin} sub="Jobs currently occupying the fast lane" tone="cool" />
-        <MetricCard label="Completed" value={summary.completed} sub={`${formatBytes(summary.bytes)} archived in recent history`} />
-        <MetricCard label="Failures" value={summary.failed} sub={summary.failed > 0 ? "Needs review or retry" : "No visible queue faults"} tone={summary.failed > 0 ? "danger" : "neutral"} />
+        <MetricCard label="Active lane" value={summary.active} sub={`${summary.downloading} pulling · ${summary.uploading} pushing`} tone="dark" />
+        <MetricCard label="Admin priority" value={summary.admin} sub="Jobs currently occupying the fast lane" tone="brand" />
+        <MetricCard label="Completed" value={summary.completed} sub={`${formatBytes(summary.bytes)} archived in recent history`} tone="light" />
+        <MetricCard
+          label="Failures"
+          value={summary.failed}
+          sub={summary.failed > 0 ? "Needs review or retry" : "No visible queue faults"}
+          tone={summary.failed > 0 ? "danger" : "paper"}
+        />
       </div>
 
       <div className="space-y-3">
         {(data?.length ?? 0) === 0 ? (
-          <div className="rounded-[28px] border border-dashed border-border/70 bg-panel/45 px-6 py-12 text-center shadow-panel">
-            <div className="text-[10px] uppercase tracking-[0.34em] text-muted/80">Queue is quiet</div>
-            <div className="mt-4 font-display text-4xl text-text">No downloads yet</div>
-            <div className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted">
+          <div className="surface-paper px-6 py-12 text-center">
+            <div className="mono-caps">Queue is quiet</div>
+            <div className="mt-4 text-[40px] leading-[0.98] tracking-[-0.03em] text-ink">No downloads yet</div>
+            <div className="mx-auto mt-3 max-w-xl text-[15px] leading-[1.5] text-muted">
               Send a YouTube link to the Telegram bot and it will appear here with quality choice,
               yt-dlp progress, and Telegram delivery state.
             </div>
           </div>
         ) : (
           <div className="space-y-3">
-            {rows.map(({ download: d, live, status, progress }) => (
+            {rows.map(({ download, live, status, progress }) => (
               <article
-                key={d.video_id}
-                className="group relative overflow-hidden rounded-[28px] border border-border/70 bg-panel/55 shadow-panel"
+                key={download.video_id}
+                className="group overflow-hidden rounded-[12px] border border-hairline bg-light text-ink shadow-softdrop"
                 style={{ contentVisibility: "auto", containIntrinsicSize: "260px" }}
               >
-                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-                <div className="grid gap-4 p-4 lg:grid-cols-[220px_minmax(0,1fr)_150px] lg:items-start lg:p-5">
-                  <div className="relative overflow-hidden rounded-[22px] border border-border/70 bg-bg/45 aspect-video">
-                    {d.thumbnail_url ? (
-                      <img src={d.thumbnail_url} className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" alt="" />
+                <div className="grid gap-4 p-4 xl:grid-cols-[240px_minmax(0,1fr)_180px] xl:items-start xl:p-5">
+                  <div className="relative aspect-video overflow-hidden rounded-[6px] border border-hairline bg-paper">
+                    {download.thumbnail_url ? (
+                      <img
+                        src={download.thumbnail_url}
+                        className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
+                        alt=""
+                      />
                     ) : (
-                      <div className="h-full w-full bg-[radial-gradient(circle_at_top,rgba(84,146,255,.18),transparent_60%)]" />
+                      <div className="h-full w-full bg-[radial-gradient(circle_at_top,rgba(60,71,88,.16),transparent_60%)]" />
                     )}
                     <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-2 p-3">
-                      <SourceBadge requesterChatId={d.requester_chat_id} />
+                      <SourceBadge requesterChatId={download.requester_chat_id} />
                       <StatusBadge s={status} />
                     </div>
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-bg/85 via-bg/30 to-transparent p-3 text-xs text-text/90">
                       {typeof progress === "number" ? `${progress}% in motion` : "Awaiting telemetry"}
                     </div>
                   </div>
+
                   <div className="min-w-0">
-                    {d.url ? (
+                    {download.url ? (
                       <a
-                        href={d.url}
+                        href={download.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="line-clamp-2 text-lg font-medium leading-tight text-text hover:text-accent"
+                        className="line-clamp-2 text-[28px] leading-[1.02] tracking-[-0.03em] text-ink hover:text-accent"
                       >
-                        {d.title || d.video_id}
+                        {download.title || download.video_id}
                       </a>
                     ) : (
-                      <div className="line-clamp-2 text-lg font-medium leading-tight text-text">{d.title || d.video_id}</div>
+                      <div className="line-clamp-2 text-[28px] leading-[1.02] tracking-[-0.03em] text-ink">
+                        {download.title || download.video_id}
+                      </div>
                     )}
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <MetaPill>{d.channel || "unknown channel"}</MetaPill>
-                      <MetaPill tone="subtle">{d.video_id}</MetaPill>
-                      {d.attempts > 1 && <MetaPill tone="warning">retry #{d.attempts}</MetaPill>}
+                      <MetaPill>{download.channel || "unknown channel"}</MetaPill>
+                      <MetaPill tone="subtle">{download.video_id}</MetaPill>
+                      {download.attempts > 1 && <MetaPill tone="warning">retry #{download.attempts}</MetaPill>}
                     </div>
 
                     <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <DeliveryBadge status={status} requesterChatId={d.requester_chat_id} />
+                      <DeliveryBadge status={status} requesterChatId={download.requester_chat_id} />
                       {typeof progress === "number" ? (
                         <span className="text-xs tabular-nums text-muted">{progress}%</span>
-                      ) : (status === "uploading" || status === "downloading") ? (
-                        <span className="text-xs text-muted">live progress pending…</span>
+                      ) : status === "uploading" || status === "downloading" ? (
+                        <span className="text-xs text-muted">live progress pending...</span>
                       ) : null}
                     </div>
 
-                    {(live?.status === "uploading" || live?.status === "downloading" || status === "uploading" || status === "downloading") && (
-                      <div className="mt-4 rounded-[20px] border border-border/60 bg-bg/35 p-3">
+                    {(live?.status === "uploading" ||
+                      live?.status === "downloading" ||
+                      status === "uploading" ||
+                      status === "downloading") && (
+                      <div className="mt-4 rounded-[6px] border border-hairline bg-paper p-4">
                         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted">
-                          <span>{live?.progress_text || (status === "uploading" ? "Uploading to Telegram…" : "Downloading with yt-dlp…")}</span>
+                          <span>{live?.progress_text || (status === "uploading" ? "Uploading to Telegram..." : "Downloading with yt-dlp...")}</span>
                           <span className="tabular-nums">{typeof progress === "number" ? `${progress}%` : "syncing"}</span>
                         </div>
-                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface/55">
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-light">
                           <div
                             className={cn(
-                              "h-full rounded-full bg-[linear-gradient(90deg,rgba(255,106,66,.95),rgba(84,146,255,.9))] transition-[width] duration-300",
-                              typeof progress !== "number" && "w-1/3 animate-pulse"
+                              "h-full rounded-full transition-[width] duration-300",
+                              status === "uploading" ? "bg-accent" : "bg-ink",
+                              typeof progress !== "number" && "w-1/3 animate-pulse",
                             )}
                             style={typeof progress === "number" ? { width: `${progress}%` } : undefined}
                           />
@@ -252,28 +276,30 @@ export function DownloadsPage() {
                           <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-muted">
                             {live?.speed_text && <span>Speed {live.speed_text}</span>}
                             {live?.eta_text && <span>ETA {live.eta_text}</span>}
-                            {live?.part && live.total_parts && live.total_parts > 1 && <span>Part {live.part}/{live.total_parts}</span>}
+                            {live?.part && live.total_parts && live.total_parts > 1 && (
+                              <span>Part {live.part}/{live.total_parts}</span>
+                            )}
                           </div>
                         )}
                       </div>
                     )}
 
-                    {(live?.error || d.error) && (
-                      <div className="mt-3 rounded-2xl border border-err/30 bg-err/8 px-3 py-2 text-[11px] leading-relaxed text-err font-mono">
-                        {live?.error || d.error}
+                    {(live?.error || download.error) && (
+                      <div className="mt-3 rounded-[6px] border border-err/30 bg-err/5 px-3 py-3 font-mono text-[11px] leading-relaxed text-err">
+                        {live?.error || download.error}
                       </div>
                     )}
                   </div>
 
-                  <div className="flex items-start justify-between gap-4 lg:flex-col lg:items-end">
+                  <div className="flex items-start justify-between gap-4 xl:flex-col xl:items-end">
                     <div className="grid gap-2 text-xs text-muted">
-                      <InfoStack label="Size" value={formatBytes(d.file_size || 0)} />
-                      <InfoStack label="Updated" value={formatRelative(d.completed_at || d.updated_at)} />
-                      <InfoStack label="Route" value={d.requester_chat_id ? "Admin DM" : "Likes chat"} />
+                      <InfoStack label="Size" value={formatBytes(download.file_size || 0)} />
+                      <InfoStack label="Updated" value={formatRelative(download.completed_at || download.updated_at)} />
+                      <InfoStack label="Route" value={download.requester_chat_id ? "Admin DM" : "Likes chat"} />
                     </div>
                     <button
-                      onClick={() => retry.mutate(d.video_id)}
-                      className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-bg/45 px-4 py-2 text-sm text-muted transition hover:border-accent/30 hover:text-text"
+                      onClick={() => retry.mutate(download.video_id)}
+                      className="button-secondary-light gap-2"
                       title="Retry"
                     >
                       <RefreshCw size={14} />
@@ -291,42 +317,45 @@ export function DownloadsPage() {
 }
 
 function StatusBadge({ s }: { s: string }) {
-  const color = s === "completed" ? "bg-ok/20 text-ok"
-    : s === "uploaded" ? "bg-ok/20 text-ok"
-    : s === "upload_failed" ? "bg-err/20 text-err"
-    : s === "uploading" ? "bg-accent/20 text-accent"
-    : s === "failed" ? "bg-err/20 text-err"
-    : s === "downloading" ? "bg-accent2/20 text-accent2"
-    : "bg-bg/70 text-muted";
-  return <span className={cn("inline-flex items-center rounded-full border border-border/60 px-3 py-1 text-[10px] uppercase tracking-[0.24em]", color)}>{s}</span>;
+  const color = s === "completed" || s === "uploaded"
+    ? "border-ok bg-ok text-ink"
+    : s === "upload_failed" || s === "failed"
+      ? "border-err bg-err text-text"
+      : s === "uploading"
+        ? "border-accent bg-accent text-ink"
+        : s === "downloading"
+          ? "border-linkBlueSoft bg-linkBlueSoft text-ink"
+          : "border-border bg-bg/90 text-text";
+
+  return <span className={cn("inline-flex items-center rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-[0.12em]", color)}>{s}</span>;
 }
 
 function SourceBadge({ requesterChatId }: { requesterChatId?: number | null }) {
   const label = requesterChatId ? "admin link" : "auto like";
-  const color = requesterChatId ? "bg-accent/20 text-accent" : "bg-accent2/20 text-accent2";
-  return <span className={cn("inline-flex items-center rounded-full border border-border/60 px-3 py-1 text-[10px] uppercase tracking-[0.24em]", color)}>{label}</span>;
+  const color = requesterChatId ? "border-accent bg-accent text-ink" : "border-border bg-bg/90 text-text";
+  return <span className={cn("inline-flex items-center rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-[0.12em]", color)}>{label}</span>;
 }
 
 function DeliveryBadge({ status, requesterChatId }: { status: string; requesterChatId?: number | null }) {
   if (status === "uploading") {
-    return <span className="rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] text-accent">Uploading to Telegram…</span>;
+    return <span className="rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-[13px] text-ink">Uploading to Telegram...</span>;
   }
   if (status === "downloading") {
-    return <span className="rounded-full border border-accent2/20 bg-accent2/10 px-3 py-1 text-[11px] text-accent2">Downloading with yt-dlp…</span>;
+    return <span className="rounded-full border border-linkBlue/20 bg-linkBlue/5 px-3 py-1 text-[13px] text-linkBlue">Downloading with yt-dlp...</span>;
   }
   if (status === "uploaded") {
-    return <span className="rounded-full border border-ok/20 bg-ok/10 px-3 py-1 text-[11px] text-ok">Uploaded to {requesterChatId ? "admin DM" : "likes chat"}</span>;
+    return <span className="rounded-full border border-ok/20 bg-ok/10 px-3 py-1 text-[13px] text-ink">Uploaded to {requesterChatId ? "admin DM" : "likes chat"}</span>;
   }
   if (status === "upload_failed") {
-    return <span className="rounded-full border border-err/20 bg-err/10 px-3 py-1 text-[11px] text-err">Telegram upload failed</span>;
+    return <span className="rounded-full border border-err/20 bg-err/5 px-3 py-1 text-[13px] text-err">Telegram upload failed</span>;
   }
   if (status === "failed") {
-    return <span className="rounded-full border border-err/20 bg-err/10 px-3 py-1 text-[11px] text-err">Download failed</span>;
+    return <span className="rounded-full border border-err/20 bg-err/5 px-3 py-1 text-[13px] text-err">Download failed</span>;
   }
   if (status === "completed") {
-    return <span className="rounded-full border border-border/60 bg-bg/40 px-3 py-1 text-[11px] text-muted">Download complete</span>;
+    return <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-[13px] text-muted">Download complete</span>;
   }
-  return <span className="rounded-full border border-border/60 bg-bg/40 px-3 py-1 text-[11px] text-muted">Queued for processing</span>;
+  return <span className="rounded-full border border-hairline bg-paper px-3 py-1 text-[13px] text-muted">Queued for processing</span>;
 }
 
 function progressPercent(live?: LiveUploadState) {
@@ -343,48 +372,49 @@ function MetricCard({
   label,
   value,
   sub,
-  tone = "neutral",
+  tone = "dark",
 }: {
   label: string;
   value: number;
   sub: string;
-  tone?: "warm" | "cool" | "danger" | "neutral";
+  tone?: "dark" | "brand" | "light" | "paper" | "danger";
 }) {
-  const toneClass = tone === "warm"
-    ? "bg-accent/20"
-    : tone === "cool"
-      ? "bg-accent2/20"
-      : tone === "danger"
-        ? "bg-err/20"
-        : "bg-white/10";
+  const cardClass = tone === "brand"
+    ? "rounded-[12px] border border-accent bg-accent p-5 text-ink"
+    : tone === "light"
+      ? "surface-light p-5"
+      : tone === "paper"
+        ? "surface-paper p-5"
+        : tone === "danger"
+          ? "rounded-[12px] border border-err/25 bg-[#fff7f6] p-5 text-ink shadow-softdrop"
+          : "surface-dark p-5";
 
   return (
-    <div className="relative overflow-hidden rounded-[24px] border border-border/70 bg-panel/60 p-4 shadow-panel">
-      <div className={cn("absolute right-0 top-0 h-24 w-24 rounded-full blur-3xl", toneClass)} />
-      <div className="relative">
-        <div className="text-[10px] uppercase tracking-[0.28em] text-muted/85">{label}</div>
-        <div className="mt-4 font-display text-4xl leading-none tabular-nums text-text">{value.toLocaleString()}</div>
-        <div className="mt-2 text-sm leading-relaxed text-muted">{sub}</div>
+    <div className={cardClass}>
+      <div className="mono-caps">{label}</div>
+      <div className={cn("mt-5 font-display text-[48px] leading-none tracking-[-0.035em] tabular-nums", tone === "dark" ? "text-text" : "text-ink")}>
+        {value.toLocaleString()}
       </div>
+      <div className={cn("mt-3 text-[15px] leading-[1.5]", tone === "dark" ? "text-ash" : "text-muted")}>{sub}</div>
     </div>
   );
 }
 
 function MetaPill({ children, tone = "default" }: { children: React.ReactNode; tone?: "default" | "subtle" | "warning" }) {
   const toneClass = tone === "warning"
-    ? "border-warn/30 bg-warn/10 text-warn"
+    ? "border-warn/30 bg-warn/10 text-ink"
     : tone === "subtle"
-      ? "border-border/60 bg-bg/35 text-muted"
-      : "border-border/60 bg-bg/45 text-text/90";
+      ? "border-hairline bg-paper text-muted"
+      : "border-hairline bg-paper text-ink";
 
-  return <span className={cn("rounded-full border px-3 py-1 text-[11px]", toneClass)}>{children}</span>;
+  return <span className={cn("rounded-full border px-3 py-1 text-[13px]", toneClass)}>{children}</span>;
 }
 
 function InfoStack({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-border/55 bg-bg/30 px-3 py-2 text-left lg:text-right">
-      <div className="text-[10px] uppercase tracking-[0.22em] text-muted/80">{label}</div>
-      <div className="mt-1 text-sm text-text">{value}</div>
+    <div className="rounded-[6px] border border-hairline bg-paper px-3 py-3 text-left xl:text-right">
+      <div className="mono-caps">{label}</div>
+      <div className="mt-2 text-[15px] text-ink">{value}</div>
     </div>
   );
 }

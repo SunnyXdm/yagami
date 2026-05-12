@@ -101,7 +101,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 
   if (settings.isLoading || status.isLoading) {
     return (
-      <div className="min-h-screen grid place-items-center px-4">
+      <div className="min-h-screen grid place-items-center px-4 bg-bg text-text">
         <Loader2 className="text-accent animate-spin" />
       </div>
     );
@@ -109,19 +109,25 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="min-h-screen bg-bg text-text">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 lg:py-8">
-        <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-7">
-          <div className="flex items-center gap-3">
-            <Logo />
+      <div className="page-container py-8 md:py-10 lg:py-12">
+        <header className="mb-10 border-b border-border pb-10">
+          <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
             <div>
-              <div className="text-xl font-semibold tracking-tight">Finish Yagami setup</div>
-              <div className="text-sm text-muted">Complete the required integrations before opening the dashboard.</div>
+              <div className="flex items-center gap-3">
+                <Logo className="h-4 w-4" />
+                <div className="font-display text-[28px] leading-none tracking-[-0.04em]">Yagami</div>
+              </div>
+              <div className="mono-eyebrow mt-8">Required setup</div>
+              <h1 className="editorial-display mt-4 text-[clamp(3.5rem,8vw,6rem)] max-w-4xl">Finish the operator handoff.</h1>
+              <p className="mt-5 max-w-2xl text-[18px] leading-[1.5] text-ash">
+                Complete the required integrations before opening the dashboard.
+              </p>
             </div>
+            <ReadinessPill ready={ready} completed={completedCount(status.data)} total={REQUIRED_STATUS_KEYS.length} />
           </div>
-          <ReadinessPill ready={ready} completed={completedCount(status.data)} total={REQUIRED_STATUS_KEYS.length} />
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[290px_1fr] gap-5">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_1fr]">
           <aside className="space-y-2">
             {SETUP_SECTIONS.map((section, index) => {
               const active = index === step;
@@ -131,33 +137,33 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                   key={section.id}
                   onClick={() => setStep(index)}
                   className={cn(
-                    "w-full text-left border rounded-lg px-4 py-3 transition",
-                    active ? "bg-panel border-accent2/60" : "bg-panel/40 border-border hover:border-border/80",
+                    "w-full rounded-[12px] border px-4 py-4 text-left transition",
+                    active ? "border-accent bg-panel text-text" : "border-border bg-panel text-ash hover:text-text",
                   )}
                 >
                   <div className="flex items-center gap-2">
                     <span className={cn("h-2 w-2 rounded-full", complete ? "bg-ok" : "bg-warn")} />
-                    <span className="text-sm font-medium">{section.title}</span>
+                    <span className="text-[16px] leading-[1.4]">{section.title}</span>
                   </div>
-                  <div className="text-xs text-muted mt-1 leading-relaxed">{section.summary}</div>
+                  <div className="mt-2 text-[13px] leading-[1.5] text-muted">{section.summary}</div>
                 </button>
               );
             })}
           </aside>
 
-          <main className="bg-panel/60 border border-border rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <main className="surface-light overflow-hidden">
+            <div className="border-b border-hairline px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <div className="text-sm uppercase tracking-wide text-muted">Step {step + 1} of {SETUP_SECTIONS.length}</div>
-                <h1 className="text-2xl font-semibold tracking-tight mt-1">{current.title}</h1>
-                <p className="text-sm text-muted mt-1">{current.summary}</p>
+                <div className="mono-caps">Step {step + 1} of {SETUP_SECTIONS.length}</div>
+                <h1 className="mt-2 text-[32px] leading-[1.05] tracking-[-0.02em] text-ink">{current.title}</h1>
+                <p className="mt-2 text-[15px] leading-[1.5] text-muted">{current.summary}</p>
               </div>
               {current.id === "google" && (
                 <button
                   type="button"
                   disabled={oauth.isPending || save.isPending || dirtyCount > 0}
                   onClick={() => oauth.mutate()}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
+                  className="button-brand gap-2"
                   title={dirtyCount > 0 ? "Save Google credentials before authorizing" : "Authorize Google"}
                 >
                   <KeyRound size={15} />
@@ -183,8 +189,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
               }}
             />
 
-            <div className="px-5 py-4 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="text-xs text-muted">
+            <div className="border-t border-hairline px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="text-[13px] text-muted">
                 {dirtyCount > 0 ? `${dirtyCount} unsaved change${dirtyCount === 1 ? "" : "s"} in this step.` : stepHint(current.id, status.data)}
               </div>
               <div className="flex items-center justify-end gap-2">
@@ -192,7 +198,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                   type="button"
                   disabled={step === 0}
                   onClick={() => setStep((value) => Math.max(0, value - 1))}
-                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2 text-sm disabled:opacity-40"
+                  className="button-secondary-light gap-2"
                 >
                   <ArrowLeft size={15} /> Back
                 </button>
@@ -200,7 +206,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                   type="button"
                   disabled={dirtyCount === 0 || save.isPending}
                   onClick={() => save.mutate(currentDraft)}
-                  className="inline-flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-sm text-white disabled:opacity-40"
+                  className={cn(dirtyCount === 0 ? "button-secondary-light gap-2" : "button-primary-light gap-2")}
                 >
                   <Save size={15} /> {save.isPending ? "Saving..." : "Save step"}
                 </button>
@@ -208,7 +214,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                   <button
                     type="button"
                     onClick={() => setStep((value) => Math.min(SETUP_SECTIONS.length - 1, value + 1))}
-                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-3 py-2 text-sm"
+                    className="button-secondary-light gap-2"
                   >
                     Next <ArrowRight size={15} />
                   </button>
@@ -217,7 +223,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                     type="button"
                     disabled={!ready || dirtyCount > 0}
                     onClick={onDone}
-                    className="inline-flex items-center gap-2 rounded-lg bg-ok px-3 py-2 text-sm text-white disabled:opacity-40"
+                    className={cn(!ready || dirtyCount > 0 ? "button-secondary-light gap-2" : "button-primary-light gap-2")}
                   >
                     <CheckCircle2 size={15} /> Open dashboard
                   </button>
@@ -228,11 +234,11 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         </div>
 
         {!ready && (
-          <section className="mt-5 bg-panel/40 border border-border rounded-xl p-5">
-            <div className="text-sm font-medium mb-3">Still needed</div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+          <section className="surface-paper mt-6 p-6">
+            <div className="mono-caps mb-4">Still needed</div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {missingLabels(status.data).map((label) => (
-                <div key={label} className="text-xs text-muted border border-border rounded-lg px-3 py-2">{label}</div>
+                <div key={label} className="rounded-[6px] border border-hairline bg-light px-3 py-3 text-[13px] text-muted">{label}</div>
               ))}
             </div>
           </section>
@@ -245,11 +251,11 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 function ReadinessPill({ ready, completed, total }: { ready: boolean; completed: number; total: number }) {
   return (
     <div className={cn(
-      "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
-      ready ? "border-ok/40 bg-ok/10 text-ok" : "border-warn/40 bg-warn/10 text-warn",
+      "inline-flex items-center gap-3 rounded-full border bg-panel px-5 py-3",
+      ready ? "border-ok/40 text-text" : "border-border text-text",
     )}>
       <span className={cn("h-2 w-2 rounded-full", ready ? "bg-ok" : "bg-warn")} />
-      {ready ? "Ready" : `${completed}/${total} required checks complete`}
+      <span className="mono-caps text-ash">{ready ? "Ready" : `${completed}/${total} required checks complete`}</span>
     </div>
   );
 }

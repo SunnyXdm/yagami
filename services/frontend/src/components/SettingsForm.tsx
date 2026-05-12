@@ -26,7 +26,7 @@ export function SettingsForm({
   onChange,
 }: SettingsFormProps) {
   return (
-    <div className="divide-y divide-border">
+    <div className="divide-y divide-hairline">
       {settings.map((setting) => (
         <SettingField
           key={setting.key}
@@ -38,11 +38,11 @@ export function SettingsForm({
         />
       ))}
       {onReveal && (
-        <div className="px-4 py-3 flex justify-end">
+        <div className="flex justify-end px-6 py-4">
           <button
             type="button"
             onClick={onReveal}
-            className="text-xs flex items-center gap-2 text-muted hover:text-text"
+            className="button-secondary-light gap-2"
           >
             {reveal ? <EyeOff size={14} /> : <Eye size={14} />}
             {reveal ? "hide secret values" : "reveal saved secrets"}
@@ -71,15 +71,19 @@ function SettingField({
   const inputType = setting.is_secret && value === MASKED_SECRET ? "password" : "text";
 
   return (
-    <div className="px-4 py-4 grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-3">
+    <div className="grid grid-cols-1 gap-4 px-6 py-6 xl:grid-cols-[300px_1fr]">
       <div>
         <div className="flex items-center gap-2">
-          <div className="text-sm font-medium">{settingLabel(setting.key)}</div>
-          {meta?.required && <span className="text-[10px] uppercase tracking-wide text-accent">required</span>}
+          <div className="text-[20px] leading-[1.2] tracking-[-0.01em] text-ink">{settingLabel(setting.key)}</div>
+          {meta?.required && (
+            <span className="rounded-full border border-ink bg-ink px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-text">
+              required
+            </span>
+          )}
         </div>
-        <div className="text-[11px] text-muted font-mono mt-1">{setting.key}</div>
+        <div className="mt-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted">{setting.key}</div>
         {settingHelp(setting) && (
-          <div className="text-xs text-muted mt-2 leading-relaxed max-w-sm">{settingHelp(setting)}</div>
+          <div className="mt-3 max-w-sm text-[14px] leading-[1.5] text-muted">{settingHelp(setting)}</div>
         )}
       </div>
       <div>
@@ -90,8 +94,8 @@ function SettingField({
             placeholder={meta?.placeholder}
             spellCheck={false}
             className={cn(
-              "w-full min-h-36 bg-bg border rounded-lg px-3 py-2 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-accent2/50",
-              error ? "border-err" : dirty ? "border-accent2" : "border-border",
+              "textarea-light resize-y font-mono",
+              error ? "border-err" : dirty ? "border-ink" : "border-hairline",
             )}
           />
         ) : (
@@ -102,13 +106,13 @@ function SettingField({
             placeholder={meta?.placeholder}
             spellCheck={false}
             className={cn(
-              "w-full bg-bg border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent2/50",
+              "input-light",
               setting.is_secret && "font-mono",
-              error ? "border-err" : dirty ? "border-accent2" : "border-border",
+              error ? "border-err" : dirty ? "border-ink" : "border-hairline",
             )}
           />
         )}
-        {error && <div className="text-xs text-err mt-1">{error}</div>}
+        {error && <div className="mt-2 text-[13px] text-err">{error}</div>}
       </div>
     </div>
   );

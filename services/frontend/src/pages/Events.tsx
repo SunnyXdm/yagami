@@ -2,12 +2,18 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "../lib/api";
 import { Header } from "./Dashboard";
-import { formatRelative, cn } from "../lib/utils";
+import { cn, formatRelative } from "../lib/utils";
 
 interface Event {
-  id: number; event_type: string; video_id: string | null; channel_id: string | null;
-  title: string | null; channel_title: string | null; thumbnail_url: string | null;
-  duration_seconds: number | null; created_at: string;
+  id: number;
+  event_type: string;
+  video_id: string | null;
+  channel_id: string | null;
+  title: string | null;
+  channel_title: string | null;
+  thumbnail_url: string | null;
+  duration_seconds: number | null;
+  created_at: string;
 }
 
 export function EventsPage() {
@@ -26,16 +32,25 @@ export function EventsPage() {
   });
 
   return (
-    <div>
-      <Header title="Activity" subtitle="Likes, watches, and subscription changes — newest first." />
-      <div className="flex flex-wrap gap-2 mb-4">
+    <div className="space-y-6">
+      <Header
+        eyebrow="Watched, liked, subscribed"
+        title="Activity archive"
+        subtitle="Likes, watches, and subscription changes in reverse chronological order. The archive lives on the light surface so dense reading stays easy."
+      />
+
+      <div className="surface-dark flex flex-wrap gap-3 p-4 sm:p-5">
         <input
-          value={q} onChange={(e) => setQ(e.target.value)}
-          placeholder="Search by video or channel title…"
-          className="bg-panel/60 border border-border rounded-lg px-3 py-1.5 text-sm w-full sm:w-64"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search by video or channel title..."
+          className="input-light w-full sm:w-80"
         />
-        <select value={type} onChange={(e) => setType(e.target.value)}
-          className="bg-panel/60 border border-border rounded-lg px-2.5 py-1.5 text-sm">
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          className="h-11 rounded-[3px] border border-hairline bg-light px-4 text-[16px] text-ink outline-none transition focus:ring-2 focus:ring-linkBlue/30"
+        >
           <option value="">all events</option>
           <option value="like">likes</option>
           <option value="watch">watches</option>
@@ -43,45 +58,50 @@ export function EventsPage() {
           <option value="unsubscribe">unsubscribed</option>
         </select>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {(data?.length ?? 0) === 0 && (
-          <div className="col-span-full p-8 text-muted text-center bg-panel/40 border border-border rounded-xl">
+          <div className="surface-paper col-span-full px-8 py-12 text-center text-[15px] text-muted">
             No activity yet. Once the YouTube poller runs, your likes and watches will land here.
           </div>
         )}
+
         {(data || []).map((e) => {
           const href = eventHref(e);
           const content = (
             <>
               {e.thumbnail_url ? (
-                <img src={e.thumbnail_url} className="w-32 aspect-video object-cover rounded-md flex-shrink-0" alt="" />
+                <img src={e.thumbnail_url} className="w-full aspect-video object-cover rounded-[6px] flex-shrink-0 sm:w-40" alt="" />
               ) : (
-                <div className="w-32 aspect-video bg-bg rounded-md flex-shrink-0" />
+                <div className="w-full aspect-video rounded-[6px] bg-paper flex-shrink-0 sm:w-40" />
               )}
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="mb-2 flex items-center gap-2">
                   <TypeBadge t={e.event_type} />
-                  <span className="text-xs text-muted">{formatRelative(e.created_at)}</span>
+                  <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
+                    {formatRelative(e.created_at)}
+                  </span>
                 </div>
-                <div className="text-sm font-medium line-clamp-2 group-hover:text-accent2 transition">{eventTitle(e)}</div>
-                <div className="text-xs text-muted truncate mt-1">{eventSubtitle(e)}</div>
+                <div className="line-clamp-2 text-[24px] leading-[1.05] tracking-[-0.02em] text-ink transition group-hover:text-accent">
+                  {eventTitle(e)}
+                </div>
+                <div className="mt-2 truncate text-[15px] text-muted">{eventSubtitle(e)}</div>
               </div>
             </>
           );
 
+          const cardClass = "grid gap-4 rounded-[12px] border border-hairline bg-light p-4 text-ink shadow-softdrop sm:grid-cols-[160px_1fr] sm:items-start";
+
           if (!href) {
             return (
-              <div key={e.id} className="flex gap-3 bg-panel/60 border border-border rounded-xl p-3">
+              <div key={e.id} className={cardClass}>
                 {content}
               </div>
             );
           }
 
           return (
-            <a key={e.id}
-               href={href}
-               target="_blank" rel="noreferrer"
-               className="flex gap-3 bg-panel/60 border border-border rounded-xl p-3 hover:border-accent2/60 transition group">
+            <a key={e.id} href={href} target="_blank" rel="noreferrer" className={cn(cardClass, "group transition hover:border-accent/40")}>
               {content}
             </a>
           );
@@ -117,10 +137,19 @@ function eventSubtitle(e: Event) {
 
 function TypeBadge({ t }: { t: string }) {
   const colors: Record<string, string> = {
-    like: "bg-accent/20 text-accent",
-    watch: "bg-accent2/20 text-accent2",
-    subscribe: "bg-ok/20 text-ok",
-    unsubscribe: "bg-err/20 text-err",
+    like: "border-accent/35 bg-accent/12 text-ink",
+    watch: "border-linkBlue/20 bg-linkBlue/5 text-linkBlue",
+    subscribe: "border-ok/30 bg-ok/10 text-ink",
+    unsubscribe: "border-err/30 bg-err/10 text-ink",
   };
-  return <span className={cn("text-[10px] px-2 py-0.5 rounded uppercase tracking-wide font-bold", colors[t] || "bg-bg text-muted")}>{t}</span>;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-[0.12em]",
+        colors[t] || "border-hairline bg-paper text-ink",
+      )}
+    >
+      {t}
+    </span>
+  );
 }

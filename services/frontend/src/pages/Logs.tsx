@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { apiGet } from "../lib/api";
-import { Header } from "./Dashboard";
-import { cn, formatRelative } from "../lib/utils";
 import { Pause, Play, Search } from "lucide-react";
+import { apiGet } from "../lib/api";
+import { cn, formatRelative } from "../lib/utils";
+import { Header } from "./Dashboard";
 
 interface LogEntry {
-  id: number; ts: string; service: string; level: string;
-  message: string; fields?: any; error?: string | null;
+  id: number;
+  ts: string;
+  service: string;
+  level: string;
+  message: string;
+  fields?: any;
+  error?: string | null;
 }
 
 const PAGE_SIZE = 100;
@@ -72,30 +77,28 @@ export function LogsPage() {
     }
   }
 
-  // SSE subscribe
   useEffect(() => {
     if (!follow) return;
     const es = new EventSource("/api/stream");
     const onLog = (ev: MessageEvent) => {
       try {
-        const e = JSON.parse(ev.data);
-        // logs.<service> arrives via systemBus too; but our SSE streams events.
-        // The api-gateway also forwards logs over SSE under topic logs.<svc>.
-        if (typeof e?.message === "string") {
-          setLogs((prev) => prependLog(prev, e, services, level, q));
+        const entry = JSON.parse(ev.data);
+        if (typeof entry?.message === "string") {
+          setLogs((prev) => prependLog(prev, entry, services, level, q));
         }
       } catch {}
     };
-    ["logs.api-gateway", "logs.youtube-poller", "logs.downloader", "logs.telegram-client"]
-      .forEach((t) => es.addEventListener(t, onLog as any));
+    ["logs.api-gateway", "logs.youtube-poller", "logs.downloader", "logs.telegram-client"].forEach((topic) => {
+      es.addEventListener(topic, onLog as any);
+    });
     return () => es.close();
   }, [follow, services.join(","), level, q]);
 
   const filtered = useMemo(() => {
-    return logs.filter((e) => {
-      if (services.length && !services.includes(e.service)) return false;
-      if (level && e.level !== level) return false;
-      if (q && !e.message.toLowerCase().includes(q.toLowerCase())) return false;
+    return logs.filter((entry) => {
+      if (services.length && !services.includes(entry.service)) return false;
+      if (level && entry.level !== level) return false;
+      if (q && !entry.message.toLowerCase().includes(q.toLowerCase())) return false;
       return true;
     });
   }, [logs, services.join(","), level, q]);
@@ -111,10 +114,11 @@ export function LogsPage() {
   }
 
   return (
-    <div>
+    <div className="space-y-6">
       <Header
-        title="Logs"
-        subtitle="Live, structured logs from every service. Filter by service, level, or text."
+        eyebrow="Structured traces"
+        title="Runtime ledger"
+        subtitle="Live logs from every service. Filters stay on the dark surface; the dense ledger moves onto paper for easier reading."
         right={
           <button
             onClick={() => {
@@ -127,8 +131,8 @@ export function LogsPage() {
               });
             }}
             className={cn(
-              "px-3 py-1.5 text-xs rounded-lg border border-border flex items-center gap-2",
-              follow ? "bg-accent text-white" : "bg-panel"
+              "inline-flex h-9 items-center gap-2 rounded-[5px] border px-4 text-[13px] font-medium transition",
+              follow ? "border-accent bg-accent text-ink" : "border-border bg-panel text-ash hover:text-text",
             )}
           >
             {follow ? <Pause size={14} /> : <Play size={14} />}
@@ -137,58 +141,54 @@ export function LogsPage() {
         }
       />
 
-      <div className="flex flex-wrap gap-2 mb-4">
-        <div className="flex items-center gap-2 bg-panel/60 border border-border rounded-lg px-2.5 py-1.5">
+      <div className="surface-dark flex flex-wrap gap-3 p-4 sm:p-5">
+        <div className="flex h-11 items-center gap-2 rounded-[3px] border border-border bg-bg px-4">
           <Search size={14} className="text-muted" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="search messages…"
-            className="bg-transparent text-sm w-48 focus:outline-none"
+            placeholder="search messages..."
+            className="w-48 bg-transparent text-[15px] text-ash outline-none"
           />
         </div>
         <select
           value={level}
           onChange={(e) => setLevel(e.target.value)}
-          className="bg-panel/60 border border-border rounded-lg px-2.5 py-1.5 text-sm"
+          className="h-11 rounded-[3px] border border-border bg-bg px-4 text-[15px] text-ash outline-none transition focus:ring-2 focus:ring-linkBlueSoft/30"
         >
           <option value="">all levels</option>
           <option value="info">info</option>
           <option value="warn">warn</option>
           <option value="error">error</option>
         </select>
-        <div className="flex flex-wrap gap-1">
-          {(allServices.data || []).map((s) => {
-            const on = services.includes(s);
+        <div className="flex flex-wrap gap-2">
+          {(allServices.data || []).map((service) => {
+            const on = services.includes(service);
             return (
               <button
-                key={s}
-                onClick={() => setServices((prev) => (on ? prev.filter((x) => x !== s) : [...prev, s]))}
+                key={service}
+                onClick={() => setServices((prev) => (on ? prev.filter((value) => value !== service) : [...prev, service]))}
                 className={cn(
-                  "px-2.5 py-1 text-xs rounded-lg border transition",
-                  on ? "bg-accent2/20 border-accent2 text-text" : "bg-panel/60 border-border text-muted hover:text-text"
+                  "rounded-full border px-4 py-2 font-mono text-[11px] uppercase tracking-[0.12em] transition",
+                  on ? "border-hairline bg-light text-ink" : "border-border bg-panel text-ash hover:text-text",
                 )}
               >
-                {s}
+                {service}
               </button>
             );
           })}
         </div>
       </div>
 
-      <div
-        ref={listRef}
-        onScroll={handleScroll}
-        className="bg-panel/40 border border-border rounded-xl overflow-auto max-h-[70vh]"
-      >
-        <div className="font-mono text-xs">
+      <div ref={listRef} onScroll={handleScroll} className="surface-light max-h-[70vh] overflow-auto">
+        <div className="font-mono text-[12px] text-ink">
           {filtered.length === 0 ? (
-            <div className="p-6 text-muted text-center">No logs match these filters yet.</div>
+            <div className="p-6 text-center text-muted">No logs match these filters yet.</div>
           ) : (
-            filtered.map((e, i) => <LogRow key={e.id ?? i} e={e} />)
+            filtered.map((entry, index) => <LogRow key={entry.id ?? index} e={entry} />)
           )}
           {filtered.length > 0 && (
-            <div className="px-4 py-3 text-[11px] text-muted border-t border-border/30 text-center">
+            <div className="border-t border-hairline px-4 py-3 text-center text-[11px] text-muted">
               {loadingMore ? "Loading older logs..." : hasMore ? "Scroll down for older logs." : "You have reached the oldest loaded log."}
             </div>
           )}
@@ -198,12 +198,12 @@ export function LogsPage() {
   );
 }
 
-function prependLog(prev: LogEntry[], e: LogEntry, services: string[], level: string, q: string) {
-  if (services.length && !services.includes(e.service)) return prev;
-  if (level && e.level !== level) return prev;
-  if (q && !e.message.toLowerCase().includes(q.toLowerCase())) return prev;
-  if (prev.some((entry) => entry.id === e.id)) return prev;
-  const next = [e, ...prev];
+function prependLog(prev: LogEntry[], entry: LogEntry, services: string[], level: string, q: string) {
+  if (services.length && !services.includes(entry.service)) return prev;
+  if (level && entry.level !== level) return prev;
+  if (q && !entry.message.toLowerCase().includes(q.toLowerCase())) return prev;
+  if (prev.some((value) => value.id === entry.id)) return prev;
+  const next = [entry, ...prev];
   if (next.length > 2000) next.length = 2000;
   return next;
 }
@@ -223,23 +223,25 @@ function appendOlder(prev: LogEntry[], older: LogEntry[]) {
 
 function LogRow({ e }: { e: LogEntry }) {
   const colors: Record<string, string> = {
-    info: "text-text",
+    info: "text-ink",
     warn: "text-warn",
     error: "text-err",
     debug: "text-muted",
   };
-  const svcColors: Record<string, string> = {
-    "api-gateway": "text-accent2",
+
+  const serviceColors: Record<string, string> = {
+    "api-gateway": "text-linkBlue",
     "youtube-poller": "text-accent",
-    "downloader": "text-ok",
-    "telegram-client": "text-warn",
+    downloader: "text-ok",
+    "telegram-client": "text-slateSoft",
   };
+
   return (
-    <div className="min-w-[720px] px-4 py-1 grid grid-cols-[110px_140px_60px_1fr] gap-3 hover:bg-bg/40 border-b border-border/30">
-      <span className="text-muted tabular-nums">{formatRelative(e.ts)}</span>
-      <span className={svcColors[e.service] || "text-muted"}>{e.service}</span>
-      <span className={cn("uppercase text-[10px] font-bold tracking-wider", colors[e.level] || "")}>{e.level}</span>
-      <span className={cn("whitespace-pre-wrap break-words", colors[e.level] || "text-text")}>{e.message}</span>
+    <div className="grid min-w-[760px] grid-cols-[110px_140px_72px_1fr] gap-4 border-b border-hairline px-4 py-3 hover:bg-paper/70">
+      <span className="tabular-nums text-muted">{formatRelative(e.ts)}</span>
+      <span className={serviceColors[e.service] || "text-muted"}>{e.service}</span>
+      <span className={cn("uppercase tracking-[0.12em]", colors[e.level] || "")}>{e.level}</span>
+      <span className={cn("whitespace-pre-wrap break-words", colors[e.level] || "text-ink")}>{e.message}</span>
     </div>
   );
 }

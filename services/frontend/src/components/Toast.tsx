@@ -36,11 +36,11 @@ export function ToastHost() {
           <div
             key={t.id}
             className={cn(
-              "flex items-start gap-3 rounded-xl px-4 py-3 shadow-2xl border backdrop-blur",
+              "flex items-start gap-3 rounded-[12px] border bg-light px-4 py-3 text-ink shadow-softdrop",
               "animate-in slide-in-from-right-5",
-              t.kind === "success" && "bg-panel/90 border-ok/40 text-text",
-              t.kind === "error"   && "bg-panel/90 border-err/40 text-text",
-              t.kind === "info"    && "bg-panel/90 border-border text-text",
+              t.kind === "success" && "border-ok/40",
+              t.kind === "error" && "border-err/40",
+              t.kind === "info" && "border-hairline",
             )}
           >
             <Icon
@@ -49,13 +49,13 @@ export function ToastHost() {
                 "flex-shrink-0 mt-0.5",
                 t.kind === "success" && "text-ok",
                 t.kind === "error"   && "text-err",
-                t.kind === "info"    && "text-accent2",
+                t.kind === "info" && "text-linkBlue",
               )}
             />
-            <div className="text-sm leading-snug">{t.message}</div>
+            <div className="text-sm leading-snug text-ink">{t.message}</div>
             <button
               onClick={() => setItems((prev) => prev.filter((x) => x.id !== t.id))}
-              className="ml-2 text-muted hover:text-text"
+              className="ml-2 text-muted hover:text-ink"
             >
               <X size={14} />
             </button>
