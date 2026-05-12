@@ -1,136 +1,160 @@
-# Telegram Client — Python + Telethon  (LEARNING GUIDE)
+# Telegram Client — Python + Telethon Learning Guide
 
-## Key Concepts Demonstrated
+## What This Service Does
 
-### 1. asyncio (async/await)
-Everything in this service is async. Telethon and nats-py are both
-async-native libraries. When you write `await tg.send_message(...)`,
-Python surrenders control to the event loop so other work (like
-processing the next NATS message) can proceed while we wait for
-Telegram's server to respond.
+The Telegram client is the final delivery layer.
 
-**Study**: `client.py` — the entire file is one async function.
+It:
 
-### 2. Closures & Factory Functions
-In `client.py`, `make_handler()` creates a callback function that
-"closes over" the `subject` and `chat_id` variables. Without this
-pattern, every callback would share the same variable reference
-(the last value from the loop). This is the *exact same* gotcha
-as JavaScript's `var` in a `for` loop.
+- consumes NATS activity and download events
+- sends messages to the right Telegram destinations
+- accepts admin DM YouTube links and turns them into download requests
+- uploads completed videos
+- splits oversized uploads into parts
+- publishes live upload progress back into NATS
 
-**Study**: `client.py` — the `make_handler` function and comments.
+## Current Login Model
 
-### 3. Dataclasses
-`config.py` uses `@dataclass(frozen=True)` to create an immutable
-configuration object. Python dataclasses are like TypeScript interfaces
-with auto-generated `__init__`, `__repr__`, and `__eq__`.
+This service has two modes:
 
-**Study**: `config.py`
+### Bot mode (preferred)
 
-### 4. Type Hints
-Every function has type annotations (`def func(x: int) -> str`).
-Python **does not enforce these at runtime** — they're documentation
-for humans and editors. Using them consistently catches bugs early.
+Bot mode is the normal path and is enough for normal delivery.
 
-### 5. Pure Functions
-`formatter.py` contains only pure functions (input → output, no
-side effects). This makes them trivially testable with `pytest`.
+It still uses Telethon and Telegram MTProto internally, but the operator only needs a bot token plus the destination chat IDs.
 
-### 6. Telethon Event Handlers
-`events.NewMessage` lets you react to incoming messages. We use it to
-detect when the admin sends a YouTube link via DM:
-```python
-@tg.on(events.NewMessage(from_users=[admin_id]))
-async def on_admin_message(event):
-    match = YOUTUBE_RE.search(event.raw_text)
-    if match:
-        video_id = match.group("id")
-        await event.reply(f"⏳ Downloading {video_id}...")
-        # publish download request via NATS
+### User-account mode (optional advanced)
+
+User mode uses:
+
+- `telegram.api_id`
+- `telegram.api_hash`
+- `telegram.session_string`
+
+This is for advanced cases only. It is not required for routine posting, and it does not fix YouTube-side limitations.
+
+Study:
+
+- `telegram_client/client.py`
+- `telegram_client/config.py`
+
+## Python Concepts Worth Studying
+
+### 1. `asyncio` is the baseline, not an extra
+
+Everything important here is async: Telethon, NATS, and most control flow.
+
+When the code does `await tg.send_message(...)`, other work can continue while Telegram is handling the request.
+
+Study:
+
+- `telegram_client/client.py`
+- `telegram_client/handlers.py`
+
+### 2. Closures are used to bind NATS routes safely
+
+The route handler factory in `client.py` closes over `subject` and `chat_id` so each NATS subscription keeps the correct destination.
+
+Without that pattern, all callbacks would accidentally share the last loop value.
+
+Study:
+
+- `telegram_client/client.py`
+
+### 3. Pure formatting code stays separate from side effects
+
+`formatter.py` holds message-shaping functions only. That is why formatting tests stay fast and easy.
+
+Study:
+
+- `telegram_client/formatter.py`
+- `tests/test_formatter.py`
+
+### 4. Admin commands and free-form DM parsing live in Telethon event handlers
+
+The admin can DM the bot commands such as `/status`, or just paste a YouTube link. The link path publishes `download.request` and the finished upload can be routed back to that admin chat.
+
+Study:
+
+- `telegram_client/client.py`
+
+### 5. Pillow is used for thumbnail preparation, not generic image effects
+
+`prepare_thumbnail()` downloads the source thumbnail, optionally crops it to the video's aspect ratio, and keeps it high quality so Telegram renders a better preview card.
+
+Study:
+
+- `telegram_client/handlers.py`
+
+### 6. `ffprobe` plus `ffmpeg -c copy` make large uploads practical
+
+This service does not re-encode for normal splitting. It probes the source, computes parts, and stream-copies them into uploadable chunks.
+
+That keeps splitting fast and preserves quality.
+
+Study:
+
+- `telegram_client/handlers.py`
+
+### 7. Telethon progress callbacks become live product telemetry
+
+The upload path attaches a `progress_callback`, converts it into `download.upload_progress`, and sends that event back through NATS. The Downloads page uses those live events to render progress bars and part counters.
+
+Study:
+
+- `telegram_client/handlers.py`
+- `services/frontend/src/pages/Downloads.tsx`
+
+### 8. Type hints matter even though Python will not enforce them at runtime
+
+The type hints here are mostly for maintainability and editor help. They are especially useful in a service that mixes Telethon objects, NATS payloads, subprocess calls, and DB access.
+
+## File Map
+
+```text
+telegram_client/client.py        Telethon startup, NATS routing, admin commands
+telegram_client/config.py        DB-backed runtime config model
+telegram_client/formatter.py     pure message/caption formatting
+telegram_client/handlers.py      upload logic, splitting, progress, thumbnails
+telegram_client/observability.py logs and heartbeats
+tests/test_formatter.py          format regression coverage
+tests/test_handlers.py           split/upload/thumbnail behavior coverage
+tests/test_client.py             client routing coverage
 ```
 
-**Study**: `client.py` — the `@tg.on(events.NewMessage(...))` handler.
+## Current Behavior To Keep In Mind
 
-### 7. Pillow for Image Processing
-Telegram thumbnails must be ≤320px on each side. We use Pillow's
-`Image.LANCZOS` resampling (highest quality) to resize downloaded
-thumbnails before uploading:
-```python
-from PIL import Image
-img = Image.open(path)
-img.thumbnail((320, 320), Image.LANCZOS)
-img.save(out, "JPEG", quality=95)
-```
-
-**Study**: `handlers.py` — `prepare_thumbnail()`.
-
-### 8. ffmpeg for Video Splitting
-Telegram limits uploads to ~2 GB. We use `ffprobe` to read the duration,
-calculate how many parts are needed, then use `ffmpeg -c copy` (no
-re-encoding, instant) to split by time:
-```python
-subprocess.run(["ffmpeg", "-ss", start, "-to", end,
-                "-i", path, "-c", "copy", part_path])
-```
-
-**Study**: `handlers.py` — `split_video()`.
-
-### 9. Regex for URL Parsing
-A compiled regex extracts YouTube video IDs from several URL formats
-(watch, youtu.be, shorts):
-```python
-YOUTUBE_RE = re.compile(
-    r"(?:youtu\.be/|youtube\.com/(?:watch\?v=|shorts/))(?P<id>[\w-]{11})"
-)
-```
-
-**Study**: `client.py` — `YOUTUBE_RE` and how it's used in the handler.
-
----
+- `youtube.watch`, `youtube.likes`, `youtube.subscribe`, and `youtube.unsubscribe` become Telegram messages.
+- `download.complete` becomes either a Telegram upload or a failure message.
+- Uploads above the service threshold are split into roughly 1.95 GB parts.
+- Live upload progress is published back to the rest of the system.
+- Bot mode is enough for normal installs.
 
 ## Common Gotchas
 
-- **Telethon first-run auth**: On first start, Telethon asks for your
-  phone number in the terminal. Use `scripts/gen-session.py` to generate
-  a session string, then set it as `TELEGRAM_SESSION_STRING` in `.env`.
-- **Session string security**: The session string IS your Telegram login.
-  Treat it like a password. Never commit it to git.
-- **NATS callback errors**: If a callback raises an exception, nats-py
-  silently swallows it. That's why we wrap everything in `try/except`
-  and log the error explicitly.
+1. Telethon exceptions inside callbacks are easy to lose if you do not log them explicitly.
+2. The session string in user-account mode is effectively a password.
+3. Pillow-backed tests need Pillow installed locally.
+4. `ffprobe` and `ffmpeg` failures must be treated as runtime conditions, not impossible states.
 
----
-
-## How to Test
+## Run And Verify
 
 ```bash
-# Install deps
-pip install -r requirements.txt pytest
+cd services/telegram-client
+python -m pytest tests/ -q
+```
 
-# Run formatter tests (pure functions — easy to test)
-pytest tests/
+Useful focused runs:
 
-# Manual: publish a test NATS message
-python -c "
-import nats, asyncio, json
-
-async def test():
-    nc = await nats.connect('nats://localhost:4222')
-    await nc.publish('youtube.watch', json.dumps({
-        'video_id': 'test123',
-        'title': 'Test Video',
-        'channel_title': 'Test Channel',
-        'duration_seconds': 300,
-    }).encode())
-    await nc.close()
-
-asyncio.run(test())
-"
+```bash
+python -m pytest tests/test_formatter.py -q
+python -m pytest tests/test_handlers.py -q -k 'handle_event or handle_download_complete or split_video'
+python -m pytest tests/test_client.py tests/test_handlers.py -q -k 'not CropToRatio'
 ```
 
 ## Resources
 
 - [Telethon docs](https://docs.telethon.dev/en/stable/)
 - [nats-py docs](https://nats-io.github.io/nats.py/)
-- [Real Python: async/await](https://realpython.com/async-io-python/)
+- [Real Python: async IO](https://realpython.com/async-io-python/)
 - [Python dataclasses](https://docs.python.org/3/library/dataclasses.html)

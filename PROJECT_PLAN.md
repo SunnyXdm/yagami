@@ -1,43 +1,46 @@
 # Project Yagami Plan
 
-This file describes the current product and architecture. It replaces the older exploratory notes that predated the web UI and database-backed settings.
+This file describes the product as it exists today, not an earlier prototype.
 
-## Current Product
+## Product Summary
 
-Yagami is a single-user, self-hosted YouTube activity bridge:
+Yagami is a single-user, self-hosted YouTube activity bridge with a guarded web UI.
 
-- Polls liked videos and subscriptions via YouTube Data API.
-- Scrapes private watch history with `yt-dlp` and browser cookies.
-- Downloads liked videos with `yt-dlp`.
-- Sends activity and completed downloads to Telegram.
-- Provides a web UI for setup, readiness checks, settings, activity, downloads, logs, and service health.
+Current shipped behavior:
 
-## User Flow
+- Poll liked videos through the YouTube Data API.
+- Scrape private watch history with `yt-dlp` and browser cookies.
+- Track subscription changes, with protective fallbacks for unstable large-account snapshots.
+- Queue liked videos and admin-requested links for download.
+- Upload completed downloads to Telegram, including live upload progress and multi-part uploads.
+- Surface activity, downloads, logs, heartbeats, and readiness in the browser.
 
-1. Start with Docker Compose.
+## Primary User Flow
+
+1. Start the stack with Docker Compose.
 2. Open `http://localhost:8787`.
-3. Create the admin account.
-4. Complete the setup wizard:
+3. Create the admin web account.
+4. Finish the guided setup:
    - Google OAuth client ID and secret
-   - Google browser authorization
+   - Browser-based Google authorization
    - Telegram bot token
    - Likes, history, subscriptions, and admin Telegram IDs
    - YouTube `cookies.txt`
-5. Dashboard unlocks after required readiness checks pass.
+5. The dashboard unlocks only after the required checks pass.
 
-The dashboard should not be the first meaningful screen on a new install. The setup wizard is the product entry point until the system is actually usable.
+The setup wizard is the intended entry point. The dashboard is not supposed to be the first useful screen on a fresh install.
 
-## Architecture
+## Service Topology
 
 | Component | Language | Responsibility |
-|---|---|---|
-| `frontend` | React + Vite | Browser UI, onboarding, settings, logs, activity, downloads |
-| `api-gateway` | Go | REST API, auth/session cookies, settings validation, OAuth, SSE |
-| `youtube-poller` | Elixir | Likes/subscription polling, watch-history scraping, OAuth refresh |
-| `downloader` | Rust | Download work queue consumer, file metadata, size enforcement |
-| `telegram-client` | Python | Telethon delivery, bot/user mode, admin DM download requests |
+| --- | --- | --- |
+| `frontend` | React + Vite | Onboarding, settings, activity, downloads, logs, service health |
+| `api-gateway` | Go | REST API, auth/session cookies, settings validation, OAuth, SSE, historical queries |
+| `youtube-poller` | Elixir | Likes polling, watch-history scraping, subscription monitoring, cookies sync, OAuth refresh |
+| `downloader` | Rust | `download.request` consumer, `yt-dlp` execution, metadata extraction, size enforcement |
+| `telegram-client` | Python | Telethon delivery, upload progress events, file splitting, admin DM download requests |
 | `postgres` | PostgreSQL | Users, sessions, settings, tokens, events, logs, heartbeats, downloads |
-| `nats` | NATS JetStream | Cross-service event and work streams |
+| `nats` | NATS JetStream | Cross-service activity, work, heartbeat, config-change, and log streams |
 
 ## Network Model
 
@@ -48,15 +51,26 @@ Only the frontend is published on the host:
 frontend nginx /api -> api-gateway:8080
 ```
 
-The OAuth redirect URI for local installs is:
+The OAuth redirect URI for local installs is fixed to:
 
 ```text
 http://localhost:8787/api/oauth/google/callback
 ```
 
-## Settings Model
+## Event Flow
 
-All user-editable runtime settings live in Postgres, not in `.env` files:
+```text
+youtube-poller --youtube.likes----------> NATS --download.request------> downloader
+youtube-poller --youtube.watch----------> NATS ------------------------> telegram-client
+youtube-poller --youtube.subscribe-----> NATS ------------------------> telegram-client
+downloader ----download.complete-------> NATS ------------------------> telegram-client
+telegram-client --download.upload_*----> NATS --SSE fanout-----------> frontend
+all services ---system.heartbeat/logs--> NATS -> api-gateway sinks -> Postgres + SSE
+```
+
+## Runtime Settings Model
+
+All user-editable runtime settings live in Postgres rather than `.env` files:
 
 - `google.client_id`
 - `google.client_secret`
@@ -76,36 +90,54 @@ All user-editable runtime settings live in Postgres, not in `.env` files:
 - `poll.interval_subs`
 - `downloader.max_concurrent`
 - `downloader.max_filesize_gb`
+- `downloader.ytdlp_extractor_args`
 
-The UI must show every setting in a human-readable group. Raw key/value editing is not the primary user experience.
+The UI groups these settings by purpose. Raw key/value editing is not the primary user experience.
 
 ## Readiness Gate
 
-Dashboard access requires these checks:
+Dashboard access currently depends on:
 
 - Google OAuth configured
 - Google OAuth authorized and not marked unhealthy
 - Telegram bot token configured
-- Likes channel ID configured
-- Watch-history channel ID configured
-- Subscriptions channel ID configured
-- Admin Telegram user ID configured
+- Likes channel configured
+- Watch-history channel configured
+- Subscriptions channel configured
+- Admin Telegram user configured
 - YouTube cookies configured
+- Downloader cookies file materialized on disk
 
-Advanced Telethon user-account mode is optional and should never block normal bot-mode setup.
+Advanced Telethon user-account mode is optional and must never block normal bot-mode setup.
+
+## Current UI Behavior
+
+- **Activity** shows likes, watches, and subscription changes newest first with thumbnails and deep links.
+- **Downloads** shows queue state, source labels, Telegram upload progress, delivery status, retry, and multi-part upload state.
+- **Logs** mixes a cursor-based historical query with a live SSE stream; the page can pause live following and load older rows on scroll.
+- **Settings** masks secrets by default, validates changed fields, and writes only touched keys.
+- **Dashboard** surfaces counters plus service heartbeat health.
 
 ## Operational Expectations
 
-- Services wait or degrade gracefully when settings are incomplete.
-- Settings changes publish `system.config_changed`.
-- Services reload or restart through Docker restart policy where needed.
-- Secrets are masked by default in the UI.
-- Logs and heartbeats are visible in the UI.
-- Failed downloads expose error messages and retry.
+- Services degrade gracefully while settings are incomplete.
+- Saving settings publishes `system.config_changed`.
+- Secrets remain masked in the browser unless explicitly revealed.
+- Logs and heartbeats remain visible in the UI.
+- The likes worker backs off exponentially on YouTube quota exhaustion.
+- Watch history depends on valid Netscape cookies.
+- Telegram uploads publish progress over NATS so the UI can render live status.
+
+## Current Constraints
+
+- Watch history is upstream-limited by cookies and `yt-dlp`; no YouTube Data API exists for it.
+- Very large YouTube accounts near the `subscriptions.list` 1000-item ceiling can receive partial or duplicate-filled subscription snapshots. In that case, unsubscribe detection is paused and recent subscribe detection is only best-effort.
+- The downloader enforces `downloader.max_filesize_gb` after download. Files that pass the downloader but exceed Telegram's practical upload ceiling are split by the Telegram client.
+- Bot mode is the standard path. User-account mode is optional advanced behavior, not a required setup dependency.
 
 ## Development Checks
 
-Use these before handing changes over:
+Fast product-level checks:
 
 ```bash
 npm run build --prefix services/frontend
@@ -113,7 +145,7 @@ docker compose config --quiet
 python3 -m pytest services/telegram-client/tests -q
 ```
 
-Go, Rust, and Elixir checks:
+Language-specific checks:
 
 ```bash
 make test-go
@@ -121,15 +153,16 @@ make test-rust
 make test-elixir
 ```
 
-Full integration:
+Full suite:
 
 ```bash
 make test-all
 ```
 
-## Open Improvements
+## Near-Term Improvements
 
 - Add a dedicated UI helper for discovering Telegram chat IDs.
-- Add explicit cookie-expiration status surfaced from `youtube-poller`.
-- Add retry/backoff visibility for YouTube quota and OAuth failures.
-- Add migration handling for existing Postgres volumes when schema changes.
+- Surface cookie freshness and poller auth degradation more explicitly in the UI.
+- Add downloader download-progress telemetry, not just Telegram upload progress.
+- Improve migration handling for long-lived Postgres volumes.
+- Keep researching a more reliable subscription-monitoring strategy for accounts above the YouTube API's practical ceiling.
