@@ -10,7 +10,10 @@ import time
 
 import nats
 from telethon import Button, TelegramClient, events
+from telethon.errors import FloodWaitError
 from telethon.sessions import StringSession
+from telethon.tl.functions.bots import SetBotCommandsRequest
+from telethon.tl.types import BotCommand, BotCommandScopeDefault
 
 from .config import Config
 from .handlers import handle_event
@@ -31,6 +34,14 @@ DEFAULT_QUALITY_OPTIONS = [
     {"key": "720", "label": "720p"},
     {"key": "480", "label": "480p"},
     {"key": "360", "label": "360p"},
+]
+BOT_COMMANDS = [
+    ("start", "Show help"),
+    ("cmds", "List admin commands"),
+    ("status", "Show service status"),
+    ("settings", "Open web settings"),
+    ("downloads", "Open download queue"),
+    ("ping", "Quick health check"),
 ]
 
 
@@ -69,37 +80,18 @@ async def run() -> None:
     nc = await nats.connect(config.nats_url)
     log.info("NATS connected (%s)", config.nats_url)
     install_log_handler(nc)
+    service_status = {"value": "starting"}
+    asyncio.create_task(_status_heartbeat(nc, lambda: service_status["value"]))
 
     # ── Telethon ──────────────────────────────────────────────
     # Two login modes:
     #   1. Bot mode (preferred): just a token from @BotFather, no api_id/hash needed.
     #   2. User mode (advanced): api_id + api_hash + session_string from Telethon.
     if config.use_bot:
-        # Bot mode still needs *some* api_id/hash for MTProto framing; fall back
-        # to Telegram's published demo credentials if the user didn't set their
-        # own (they're public, used by official examples).
-        api_id = config.api_id or 6
-        api_hash = config.api_hash or "eb06d4abfb49dc3eeb1aeb98ae0f581e"
-        tg = TelegramClient(StringSession(), api_id, api_hash)
-        tg.parse_mode = "md"
-        try:
-            await tg.start(bot_token=config.bot_token)
-            log.info("Telethon started in BOT mode.")
-        except Exception as e:
-            log.error("Bot login failed: %s — check the token in Settings.", e)
-            await asyncio.sleep(30)
-            os._exit(1)
+        tg = await _start_bot_client(config, service_status)
+        await _install_bot_commands(tg)
     else:
-        session = StringSession(config.session_string)
-        tg = TelegramClient(session, config.api_id, config.api_hash)
-        tg.parse_mode = "md"
-        try:
-            await tg.start()
-            log.info("Telethon started in USER mode.")
-        except Exception as e:
-            log.error("User-account login failed: %s — check api_id/api_hash/session_string.", e)
-            await asyncio.sleep(30)
-            os._exit(1)
+        tg = await _start_user_client(config, service_status)
 
     me = await tg.get_me()
     log.info("Telegram connected as @%s (id=%s)", getattr(me, "username", "?"), me.id)
@@ -128,7 +120,7 @@ async def run() -> None:
         "events_handled": 0,
     }
 
-    asyncio.create_task(_status_heartbeat(nc, lambda: "ok"))
+    service_status["value"] = "ok"
 
     # ── Route NATS events → Telegram channels ─────────────────
     routes: dict[str, int] = {}
@@ -177,19 +169,121 @@ async def run() -> None:
         await tg.disconnect()
 
 
+async def _start_bot_client(config: Config, service_status: dict[str, str]) -> TelegramClient:
+    # Bot mode still needs *some* api_id/hash for MTProto framing; fall back
+    # to Telegram's published demo credentials if the user didn't set their
+    # own (they're public, used by official examples).
+    api_id = config.api_id or 6
+    api_hash = config.api_hash or "eb06d4abfb49dc3eeb1aeb98ae0f581e"
+
+    while True:
+        tg = TelegramClient(StringSession(), api_id, api_hash)
+        tg.parse_mode = "md"
+        try:
+            await tg.start(bot_token=config.bot_token)
+            log.info("Telethon started in BOT mode.")
+            return tg
+        except FloodWaitError as exc:
+            wait_seconds = max(int(getattr(exc, "seconds", 0)), 60)
+            service_status["value"] = "degraded"
+            log.error(
+                "Telegram bot login is flood-waited for %s seconds; holding the process instead of restart-looping.",
+                wait_seconds,
+            )
+            await _safe_disconnect(tg)
+            await asyncio.sleep(wait_seconds + 5)
+            service_status["value"] = "starting"
+        except Exception as exc:
+            service_status["value"] = "degraded"
+            log.error("Bot login failed: %s — retrying in 5 minutes.", exc)
+            await _safe_disconnect(tg)
+            await asyncio.sleep(300)
+            service_status["value"] = "starting"
+
+
+async def _start_user_client(config: Config, service_status: dict[str, str]) -> TelegramClient:
+    while True:
+        tg = TelegramClient(StringSession(config.session_string), config.api_id, config.api_hash)
+        tg.parse_mode = "md"
+        try:
+            await tg.start()
+            log.info("Telethon started in USER mode.")
+            return tg
+        except Exception as exc:
+            service_status["value"] = "degraded"
+            log.error("User-account login failed: %s — retrying in 5 minutes.", exc)
+            await _safe_disconnect(tg)
+            await asyncio.sleep(300)
+            service_status["value"] = "starting"
+
+
+async def _safe_disconnect(tg: TelegramClient) -> None:
+    try:
+        await tg.disconnect()
+    except Exception:
+        pass
+
+
+async def _install_bot_commands(tg: TelegramClient) -> None:
+    commands = [BotCommand(command=command, description=description) for command, description in BOT_COMMANDS]
+    try:
+        await tg(SetBotCommandsRequest(scope=BotCommandScopeDefault(), lang_code="", commands=commands))
+        log.info("Installed Telegram bot command menu: %s", ", ".join(f"/{command}" for command, _ in BOT_COMMANDS))
+    except Exception:
+        log.exception("Could not install Telegram bot command menu")
+
+
+def _web_url(config: Config, path: str = "") -> str:
+    base = config.web_url.rstrip("/")
+    if not path:
+        return base
+    return f"{base}/{path.lstrip('/')}"
+
+
+def _command_list_text(config: Config) -> str:
+    return "\n".join([
+        "**Yagami commands**",
+        "",
+        "• `/status` — service status",
+        "• `/settings` — open web settings",
+        "• `/downloads` — open download queue",
+        "• `/ping` — quick health check",
+        "",
+        "Send a YouTube link to choose quality and queue an admin download.",
+        f"Web UI: {_web_url(config)}",
+    ])
+
+
+def _command_buttons(config: Config) -> list[list[Button]]:
+    return [[
+        Button.url("Settings", _web_url(config, "settings")),
+        Button.url("Downloads", _web_url(config, "downloads")),
+    ]]
+
+
 def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
     config: Config = state["config"]
     admin = config.admin_user_id
 
     @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/start(?:@\w+)?$"))
     async def _start(event):
-        await event.reply(
-            "**Yagami is online.**\n\n"
-            "Available commands:\n"
-            "• `/ping` — quick health check\n"
-            "• `/status` — full system status\n\n"
-            "Send any YouTube link and I'll show quality buttons before queueing it."
-        )
+        await event.reply(_command_list_text(config), buttons=_command_buttons(config) if config.use_bot else None)
+
+    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/(?:cmds|help)(?:@\w+)?$"))
+    async def _cmds(event):
+        await event.reply(_command_list_text(config), buttons=_command_buttons(config) if config.use_bot else None)
+
+    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/settings(?:@\w+)?$"))
+    async def _settings(event):
+        url = _web_url(config, "settings")
+        buttons = [[Button.url("Open settings", url)]] if config.use_bot else None
+        await event.reply(f"Settings: {url}", buttons=buttons)
+
+    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/downloads(?:@\w+)?$"))
+    async def _downloads(event):
+        url = _web_url(config, "downloads")
+        buttons = [[Button.url("Open queue", url)]] if config.use_bot else None
+        await event.reply(f"Download queue: {url}", buttons=buttons)
 
     @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/ping(?:@\w+)?$"))
     async def _ping(event):
@@ -224,7 +318,7 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
         url = f"https://www.youtube.com/watch?v={video_id}"
         log.info("Admin requested download: %s", url)
         probe = await _probe_download_options(nc, video_id, url)
-        title = probe.get("title") or video_id
+        title = probe.get("title") or "Untitled video"
         thumbnail = probe.get("thumbnail")
 
         if not config.use_bot:

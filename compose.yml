@@ -78,6 +78,7 @@ services:
     environment:
       DATABASE_URL: postgres://yagami:yagami@postgres:5432/yagami
       NATS_URL: nats://nats:4222
+      YAGAMI_WEB_URL: ${YAGAMI_WEB_URL:-http://localhost:8787}
     depends_on:
       postgres: { condition: service_healthy }
       nats:     { condition: service_started }

@@ -32,13 +32,13 @@ export function EventsPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <Header
         eyebrow="Activity"
         title="Event log"
       />
 
-      <div className="surface-dark flex flex-wrap gap-3 p-4 sm:p-5">
+      <div className="surface-dark flex flex-wrap gap-3 p-3 sm:p-4">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -58,7 +58,7 @@ export function EventsPage() {
         </select>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2">
         {(data?.length ?? 0) === 0 && (
           <div className="surface-dark col-span-full px-8 py-12 text-center text-[15px] text-body">
             No activity yet. Once the YouTube poller runs, your likes and watches will land here.
@@ -70,9 +70,9 @@ export function EventsPage() {
           const content = (
             <>
               {e.thumbnail_url ? (
-                <img src={e.thumbnail_url} className="w-full aspect-video object-cover rounded-[10px] flex-shrink-0 sm:w-40" alt="" />
+                <img src={e.thumbnail_url} className="w-full aspect-video object-cover rounded-[8px] flex-shrink-0 sm:w-32" alt="" />
               ) : (
-                <div className="w-full aspect-video rounded-[10px] bg-card flex-shrink-0 sm:w-40" />
+                <div className="w-full aspect-video rounded-[8px] bg-card flex-shrink-0 sm:w-32" />
               )}
               <div className="min-w-0 flex-1">
                 <div className="mb-2 flex items-center gap-2">
@@ -81,15 +81,15 @@ export function EventsPage() {
                     {formatRelative(e.created_at)}
                   </span>
                 </div>
-                <div className="line-clamp-2 text-[22px] font-semibold leading-[1.15] tracking-[-0.02em] text-text transition group-hover:text-white">
+                <div className="line-clamp-2 text-[16px] font-semibold leading-[1.35] text-text transition group-hover:text-white">
                   {eventTitle(e)}
                 </div>
-                <div className="mt-2 truncate text-[15px] text-body">{eventSubtitle(e)}</div>
+                <div className="mt-1 truncate text-[13px] text-body">{eventSubtitle(e)}</div>
               </div>
             </>
           );
 
-          const cardClass = "grid gap-4 rounded-[12px] border border-border bg-panel p-4 text-text sm:grid-cols-[160px_1fr] sm:items-start";
+          const cardClass = "grid gap-3 rounded-[8px] border border-border bg-panel p-3 text-text sm:grid-cols-[128px_1fr] sm:items-start";
 
           if (!href) {
             return (

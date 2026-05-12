@@ -22,6 +22,7 @@ class Config:
     admin_user_id: int = 0
     nats_url: str = "nats://nats:4222"
     database_url: str = "postgres://yagami:yagami@postgres:5432/yagami"
+    web_url: str = "http://localhost:8787"
 
     @property
     def use_bot(self) -> bool:
@@ -44,6 +45,7 @@ class Config:
         database_url = os.environ.get(
             "DATABASE_URL", "postgres://yagami:yagami@postgres:5432/yagami"
         )
+        web_url = os.environ.get("YAGAMI_WEB_URL") or os.environ.get("WEB_URL") or "http://localhost:8787"
         settings = await _load_settings(database_url)
 
         def s(key: str) -> str:
@@ -66,6 +68,7 @@ class Config:
             admin_user_id=i("telegram.admin_user_id"),
             nats_url=nats_url,
             database_url=database_url,
+            web_url=web_url.rstrip("/"),
         )
 
     @classmethod
@@ -81,6 +84,7 @@ class Config:
             admin_user_id=int(os.environ.get("TELEGRAM_ADMIN_USER_ID", "0")),
             nats_url=os.environ.get("NATS_URL", "nats://localhost:4222"),
             database_url=os.environ.get("DATABASE_URL", ""),
+            web_url=(os.environ.get("YAGAMI_WEB_URL") or os.environ.get("WEB_URL") or "http://localhost:8787").rstrip("/"),
         )
 
 

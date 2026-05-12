@@ -91,7 +91,7 @@ export function SettingsPage() {
   const ready = isSystemReady(status.data);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       <Header
         eyebrow="Settings"
         title="Settings"
@@ -103,7 +103,7 @@ export function SettingsPage() {
         }
       />
 
-      <section className="grid grid-cols-1 gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+      <section className="grid grid-cols-1 gap-3 xl:grid-cols-[1.2fr_0.8fr]">
         <Card title="Setup readiness" tone="surface" hint={ready ? "Healthy" : "Needs attention"}>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {readinessItems(status.data).map((item) => (
@@ -116,18 +116,18 @@ export function SettingsPage() {
         </Card>
 
         <Card title="Required checks" tone="elevated" hint="Access gate">
-          <div className="text-[56px] font-semibold leading-none tracking-[-0.03em] text-text tabular-nums">
+          <div className="text-[32px] font-semibold leading-none text-text tabular-nums">
             {completedCount(status.data)}/{REQUIRED_STATUS_KEYS.length}
           </div>
-          <div className="mt-3 text-[15px] leading-[1.6] text-body">Dashboard access depends on these checks.</div>
-          <div className="mt-4 inline-flex items-center gap-2 rounded-[8px] border border-border bg-card px-3 py-2 text-[13px] text-body">
+          <div className="mt-2 text-[14px] leading-[1.5] text-body">Dashboard access depends on these checks.</div>
+          <div className="mt-3 inline-flex items-center gap-2 rounded-[8px] border border-border bg-card px-3 py-2 text-[13px] text-body">
             <span className={cn("h-2 w-2 rounded-full", ready ? "bg-accentGreen" : "bg-accentYellow")} />
             {ready ? "System ready" : "Finish the remaining required setup"}
           </div>
         </Card>
       </section>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[280px_1fr]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[260px_1fr]">
         <aside className="space-y-2">
           {SETTINGS_SECTIONS.map((section) => {
             const selected = section.id === activeSection.id;
@@ -136,26 +136,26 @@ export function SettingsPage() {
                 key={section.id}
                 onClick={() => setActive(section.id)}
                 className={cn(
-                  "w-full rounded-[10px] border px-4 py-4 text-left transition",
+                  "w-full rounded-[8px] border px-3 py-3 text-left transition",
                   selected ? "border-white/12 bg-elevated text-text" : "border-border bg-panel text-body hover:bg-elevated hover:text-text",
                 )}
               >
                 <div className="flex items-center gap-2">
                   {section.setup && <CheckCircle2 size={14} className={readyForSection(section.id, status.data) ? "text-accentGreen" : "text-muted"} />}
-                  <span className="text-[16px] leading-[1.4]">{section.title}</span>
+                  <span className="text-[14px] font-medium leading-[1.4]">{section.title}</span>
                 </div>
-                <div className="mt-2 text-[13px] leading-[1.5] text-muted">{section.summary}</div>
+                <div className="mt-1.5 text-[12px] leading-[1.5] text-muted">{section.summary}</div>
               </button>
             );
           })}
         </aside>
 
         <section className="command-card overflow-hidden">
-          <div className="border-b border-border px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="border-b border-border px-4 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="text-[13px] font-medium text-muted">Section</div>
-              <h2 className="mt-2 text-[28px] font-semibold leading-[1.15] text-text">{activeSection.title}</h2>
-              <p className="mt-2 text-[15px] leading-[1.6] text-body">{activeSection.summary}</p>
+              <h2 className="mt-1 text-[20px] font-semibold leading-[1.2] text-text">{activeSection.title}</h2>
+              <p className="mt-1 text-[14px] leading-[1.5] text-body">{activeSection.summary}</p>
             </div>
             {activeSection.id === "google" && (
               <button
@@ -172,7 +172,7 @@ export function SettingsPage() {
           </div>
 
           {settings.isLoading ? (
-            <div className="p-8 text-[15px] text-body">Loading settings...</div>
+            <div className="p-6 text-[15px] text-body">Loading settings...</div>
           ) : (
             <SettingsForm
               settings={visibleSettings}
@@ -192,7 +192,7 @@ export function SettingsPage() {
             />
           )}
 
-          <div className="sticky bottom-0 border-t border-border bg-bg/95 px-6 py-5 backdrop-blur flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="sticky bottom-0 border-t border-border bg-bg/95 px-4 py-4 backdrop-blur flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="text-[13px] text-body">
               {dirtyCount > 0 ? `${dirtyCount} unsaved change${dirtyCount === 1 ? "" : "s"} in ${activeSection.title}.` : "Only changed fields are written."}
             </div>

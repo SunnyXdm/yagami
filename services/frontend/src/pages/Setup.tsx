@@ -42,7 +42,7 @@ export function Setup({ onDone }: { onDone: () => void }) {
                 </div>
               </div>
 
-              <h1 className="mt-8 max-w-2xl text-[clamp(2.5rem,5vw,4.25rem)] font-semibold leading-[1.1] text-text">
+              <h1 className="mt-8 max-w-2xl text-[40px] font-semibold leading-[1.1] text-text lg:text-[54px]">
                 Start with the account that unlocks the rest of the control surface.
               </h1>
               <p className="mt-4 max-w-xl text-[18px] leading-[1.6] text-body">

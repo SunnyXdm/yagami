@@ -155,7 +155,7 @@ export function DownloadsPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <Header
         eyebrow="Downloads"
         title="Download queue"
@@ -172,23 +172,23 @@ export function DownloadsPage() {
       />
 
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Active lane" value={summary.active} sub={`${summary.downloading} pulling · ${summary.uploading} pushing`} tone="blue" />
-        <MetricCard label="Admin priority" value={summary.admin} sub="Jobs currently occupying the fast lane" tone="white" />
-        <MetricCard label="Completed" value={summary.completed} sub={`${formatBytes(summary.bytes)} archived in recent history`} tone="green" />
+        <MetricCard label="Active" value={summary.active} sub={`${summary.downloading} downloading · ${summary.uploading} uploading`} tone="blue" />
+        <MetricCard label="Admin" value={summary.admin} sub="Admin-requested active jobs" tone="white" />
+        <MetricCard label="Completed" value={summary.completed} sub={`${formatBytes(summary.bytes)} in recent jobs`} tone="green" />
         <MetricCard
-          label="Failures"
+          label="Failed"
           value={summary.failed}
-          sub={summary.failed > 0 ? "Needs review or retry" : "No visible queue faults"}
+          sub={summary.failed > 0 ? "Needs review or retry" : "No queue faults"}
           tone={summary.failed > 0 ? "red" : "yellow"}
         />
       </div>
 
       <div className="space-y-3">
         {(data?.length ?? 0) === 0 ? (
-          <div className="surface-dark px-6 py-12 text-center">
+          <div className="surface-dark px-5 py-8 text-center">
             <div className="text-[13px] font-medium text-muted">Queue is quiet</div>
-            <div className="mt-4 text-[38px] font-semibold leading-[1.05] tracking-[-0.03em] text-text">No downloads yet</div>
-            <div className="mx-auto mt-3 max-w-xl text-[15px] leading-[1.6] text-body">
+            <div className="mt-2 text-[24px] font-semibold leading-[1.2] text-text">No downloads yet</div>
+            <div className="mx-auto mt-2 max-w-xl text-[14px] leading-[1.6] text-body">
               Send a YouTube link to the Telegram bot and it will appear here with quality choice,
               yt-dlp progress, and Telegram delivery state.
             </div>
@@ -198,11 +198,11 @@ export function DownloadsPage() {
             {rows.map(({ download, live, status, progress }) => (
               <article
                 key={download.video_id}
-                className="group overflow-hidden rounded-[12px] border border-border bg-panel text-text"
-                style={{ contentVisibility: "auto", containIntrinsicSize: "260px" }}
+                className="group overflow-hidden rounded-[8px] border border-border bg-panel text-text"
+                style={{ contentVisibility: "auto", containIntrinsicSize: "170px" }}
               >
-                <div className="grid gap-4 p-4 xl:grid-cols-[240px_minmax(0,1fr)_180px] xl:items-start xl:p-5">
-                  <div className="relative aspect-video overflow-hidden rounded-[10px] border border-border bg-card">
+                <div className="grid gap-4 p-3 xl:grid-cols-[160px_minmax(0,1fr)_170px] xl:items-start xl:p-4">
+                  <div className="relative aspect-video overflow-hidden rounded-[8px] border border-border bg-card">
                     {download.thumbnail_url ? (
                       <img
                         src={download.thumbnail_url}
@@ -227,23 +227,23 @@ export function DownloadsPage() {
                         href={download.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="line-clamp-2 text-[22px] font-semibold leading-[1.2] tracking-[-0.02em] text-text hover:text-white"
+                        className="line-clamp-2 text-[17px] font-semibold leading-[1.3] text-text hover:text-white"
                       >
                         {download.title ?? <span className="text-muted">Untitled</span>}
                       </a>
                     ) : (
-                      <div className="line-clamp-2 text-[22px] font-semibold leading-[1.2] tracking-[-0.02em] text-text">
+                      <div className="line-clamp-2 text-[17px] font-semibold leading-[1.3] text-text">
                         {download.title ?? <span className="text-muted">Untitled</span>}
                       </div>
                     )}
 
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-2 flex flex-wrap gap-2">
                       <MetaPill>{download.channel || "unknown channel"}</MetaPill>
                       <MetaPill tone="subtle">{download.video_id}</MetaPill>
                       {download.attempts > 1 && <MetaPill tone="warning">retry #{download.attempts}</MetaPill>}
                     </div>
 
-                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <DeliveryBadge status={status} requesterChatId={download.requester_chat_id} />
                       {typeof progress === "number" ? (
                         <span className="text-xs tabular-nums text-muted">{progress}%</span>
@@ -398,15 +398,15 @@ function MetricCard({
           : "bg-accentBlue";
 
   return (
-    <div className="surface-dark p-5">
+    <div className="surface-dark p-4">
       <div className="flex items-start justify-between gap-4">
-        <div className="grid h-10 w-10 place-items-center rounded-[8px] border border-border bg-card">
-          <span className={cn("h-3 w-3 rounded-[4px]", accentClass)} />
+        <div className="grid h-8 w-8 place-items-center rounded-[7px] border border-border bg-card">
+          <span className={cn("h-2.5 w-2.5 rounded-[3px]", accentClass)} />
         </div>
-        <div className="text-[36px] font-semibold leading-none text-text tabular-nums">{value.toLocaleString()}</div>
+        <div className="text-[28px] font-semibold leading-none text-text tabular-nums">{value.toLocaleString()}</div>
       </div>
-      <div className="mt-6 text-[14px] font-medium text-text">{label}</div>
-      <div className="mt-1 text-[14px] leading-[1.6] text-body">{sub}</div>
+      <div className="mt-4 text-[13px] font-medium text-text">{label}</div>
+      <div className="mt-1 text-[13px] leading-[1.5] text-body">{sub}</div>
     </div>
   );
 }
@@ -418,14 +418,14 @@ function MetaPill({ children, tone = "default" }: { children: React.ReactNode; t
       ? "text-muted"
       : "text-body";
 
-  return <span className={cn("rounded-[8px] border border-border bg-card px-3 py-1.5 text-[13px]", toneClass)}>{children}</span>;
+  return <span className={cn("rounded-[7px] border border-border bg-card px-2.5 py-1 text-[12px]", toneClass)}>{children}</span>;
 }
 
 function InfoStack({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[8px] border border-border bg-card px-3 py-3 text-left xl:text-right">
+    <div className="rounded-[7px] border border-border bg-card px-3 py-2 text-left xl:text-right">
       <div className="text-[12px] text-muted">{label}</div>
-      <div className="mt-2 text-[15px] text-text">{value}</div>
+      <div className="mt-1 text-[13px] text-text">{value}</div>
     </div>
   );
 }

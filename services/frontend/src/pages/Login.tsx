@@ -41,7 +41,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
                 </div>
               </div>
 
-              <h1 className="mt-8 max-w-2xl text-[clamp(2.5rem,5.5vw,4.5rem)] font-semibold leading-[1.1] text-text">
+              <h1 className="mt-8 max-w-2xl text-[40px] font-semibold leading-[1.1] text-text lg:text-[56px]">
                 The live surface for watches, downloads, logs, and delivery.
               </h1>
               <p className="mt-4 max-w-xl text-[18px] leading-[1.6] text-body">

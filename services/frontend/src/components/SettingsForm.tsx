@@ -38,7 +38,7 @@ export function SettingsForm({
         />
       ))}
       {onReveal && (
-        <div className="flex justify-end px-6 py-4">
+        <div className="flex justify-end px-4 py-3">
           <button
             type="button"
             onClick={onReveal}
@@ -71,10 +71,10 @@ function SettingField({
   const inputType = setting.is_secret && value === MASKED_SECRET ? "password" : "text";
 
   return (
-    <div className="grid grid-cols-1 gap-4 px-6 py-6 xl:grid-cols-[300px_1fr]">
+    <div className="grid grid-cols-1 gap-4 px-4 py-4 xl:grid-cols-[260px_1fr]">
       <div>
         <div className="flex items-center gap-2">
-          <div className="text-[18px] font-medium leading-[1.4] text-text">{settingLabel(setting.key)}</div>
+          <div className="text-[15px] font-medium leading-[1.4] text-text">{settingLabel(setting.key)}</div>
           {meta?.required && (
             <span className="rounded-[6px] border border-border bg-card px-2.5 py-1 text-[11px] font-medium text-body">
               required
@@ -83,7 +83,7 @@ function SettingField({
         </div>
         <div className="mt-2 text-[12px] text-stone">{setting.key}</div>
         {settingHelp(setting) && (
-          <div className="mt-3 max-w-sm text-[14px] leading-[1.6] text-body">{settingHelp(setting)}</div>
+          <div className="mt-2 max-w-sm text-[13px] leading-[1.5] text-body">{settingHelp(setting)}</div>
         )}
       </div>
       <div>

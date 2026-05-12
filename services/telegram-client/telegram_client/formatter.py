@@ -36,7 +36,7 @@ def format_views(count: int | None) -> str:
 
 def format_watch(data: dict) -> str:
     video_id = data.get('video_id', '')
-    title = _escape_md(data.get('title', 'Unknown'))
+    title = _escape_md(_video_title(data))
     channel = _escape_md(_channel(data))
     duration = _escape_md(data.get("duration") or format_duration(data.get("duration_seconds")))
     video = _markdown_link(title, _youtube_video_url(video_id))
@@ -50,7 +50,7 @@ def format_watch(data: dict) -> str:
 
 def format_like(data: dict) -> str:
     video_id = data.get('video_id', '')
-    title = _escape_md(data.get('title', 'Unknown'))
+    title = _escape_md(_video_title(data))
     channel = _escape_md(_channel(data))
     duration = _escape_md(data.get("duration") or format_duration(data.get("duration_seconds")))
     video = _markdown_link(title, _youtube_video_url(video_id))
@@ -64,7 +64,7 @@ def format_like(data: dict) -> str:
 
 
 def format_subscribe(data: dict) -> str:
-    channel = _escape_md(_channel(data))
+    channel = _escape_md(_channel(data, allow_title_fallback=True))
     channel_id = _escape_md(data.get("channel_id") or "Unknown")
     channel_ref = _markdown_link(channel, _youtube_channel_url(data.get("channel_id")))
     return (
@@ -75,7 +75,7 @@ def format_subscribe(data: dict) -> str:
 
 
 def format_unsubscribe(data: dict) -> str:
-    channel = _escape_md(_channel(data))
+    channel = _escape_md(_channel(data, allow_title_fallback=True))
     channel_id = _escape_md(data.get("channel_id") or "Unknown")
     channel_ref = _markdown_link(channel, _youtube_channel_url(data.get("channel_id")))
     return (
@@ -87,15 +87,27 @@ def format_unsubscribe(data: dict) -> str:
 
 def format_video_caption(data: dict, part: int | None = None, total: int | None = None) -> str:
     duration = _escape_md(data.get("duration") or format_duration(data.get("duration_seconds")))
-    title = _escape_md(data.get("title", "Video"))
+    title = _escape_md(_video_title(data, fallback="Video"))
     channel = _escape_md(_channel(data))
     suffix = f" [Part {part}/{total}]" if part and total and total > 1 else ""
     return f"{title} — {channel} ({duration}){suffix}"
 
 
-def _channel(data: dict) -> str:
-    """Get channel name from either field name the poller might send."""
-    return data.get("channel_title") or data.get("channel") or data.get("title") or "Unknown"
+def _video_title(data: dict, fallback: str = "Unknown") -> str:
+    title = data.get("title")
+    if title:
+        return str(title)
+    return fallback
+
+
+def _channel(data: dict, allow_title_fallback: bool = False) -> str:
+    """Get channel name from either field name the poller/downloader might send."""
+    channel = data.get("channel_title") or data.get("channel")
+    if channel:
+        return str(channel)
+    if allow_title_fallback and data.get("title"):
+        return str(data["title"])
+    return "Unknown"
 
 
 def _escape_md(value: object) -> str:

@@ -65,11 +65,11 @@ a {
 
 @layer components {
   .page-container {
-    @apply mx-auto max-w-[1240px] px-4 sm:px-6 lg:px-8;
+    @apply mx-auto max-w-[1440px] px-4 sm:px-5 lg:px-6;
   }
 
   .surface-dark {
-    @apply rounded-[10px] border border-border bg-panel text-text;
+    @apply rounded-[8px] border border-border bg-panel text-text;
   }
 
   .button-primary-dark {
@@ -127,7 +127,7 @@ a {
   }
 
   .command-card {
-    @apply rounded-[16px] border border-border bg-panel;
+    @apply rounded-[10px] border border-border bg-panel;
   }
 
   .keycap {

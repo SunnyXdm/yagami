@@ -132,7 +132,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
                     <div className="text-[24px] font-semibold leading-none text-text">Finish the operator handoff.</div>
                   </div>
                 </div>
-                <h1 className="mt-8 max-w-4xl text-[clamp(2.5rem,5vw,4rem)] font-semibold leading-[1.1] text-text">
+                <h1 className="mt-8 max-w-4xl text-[40px] font-semibold leading-[1.1] text-text lg:text-[52px]">
                   Connect the required integrations before opening the dashboard.
                 </h1>
                 <p className="mt-4 max-w-2xl text-[18px] leading-[1.6] text-body">

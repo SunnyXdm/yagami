@@ -99,6 +99,11 @@ class TestFormatWatch:
         assert "My Video" in result
         assert "Unknown" in result  # missing channel
 
+    def test_missing_channel_does_not_reuse_video_title(self):
+        result = format_watch({"title": "My Video", "video_id": "abc123"})
+        assert "`Channel:` Unknown" in result
+        assert "`Channel:` My Video" not in result
+
     def test_escapes_markdown_sensitive_text(self):
         result = format_watch({
             "title": "Look [here]",
@@ -165,6 +170,11 @@ class TestFormatVideoCaption:
         result = format_video_caption(data)
         assert "Ch" in result
         assert "4:20" in result
+
+    def test_missing_caption_channel_does_not_reuse_video_title(self):
+        result = format_video_caption({"title": "Video Title"})
+        assert "Video Title — Unknown" in result
+        assert "Video Title — Video Title" not in result
 
     def test_missing_fields(self):
         result = format_video_caption({})

@@ -31,7 +31,7 @@ export function Shell({
   return (
     <div className="min-h-screen bg-bg text-text">
       <header className="sticky top-0 z-40 border-b border-border bg-bg/95 backdrop-blur">
-        <div className="page-container flex min-h-[64px] items-center gap-3 py-3">
+        <div className="page-container flex min-h-[56px] items-center gap-3 py-2">
           <button
             type="button"
             onClick={() => setMobileNavOpen(true)}
@@ -42,10 +42,10 @@ export function Shell({
           </button>
 
           <button onClick={() => onPage("dashboard")} className="flex flex-shrink-0 items-center gap-3 text-left">
-            <Logo className="h-9 w-9" />
+            <Logo className="h-8 w-8" />
             <div>
-              <div className="text-[13px] font-medium leading-none text-body">Command center</div>
-              <div className="mt-1 text-[18px] font-semibold tracking-[0.01em] text-text">Yagami</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Admin</div>
+              <div className="mt-0.5 text-[16px] font-semibold text-text">Yagami</div>
             </div>
           </button>
 
@@ -56,6 +56,9 @@ export function Shell({
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
+            <div className="hidden xl:block">
+              <ServiceHealthDot />
+            </div>
             <div className="hidden rounded-[8px] border border-border bg-panel px-3 py-2 text-[13px] text-body xl:flex">
               {user.username}
             </div>
@@ -69,24 +72,13 @@ export function Shell({
             </button>
             <button type="button" onClick={() => onPage("downloads")} className="button-primary-dark gap-2">
               <Download size={14} />
-              Open queue
+              Queue
             </button>
-          </div>
-        </div>
-
-        <div className="border-t border-border/80">
-          <div className="page-container flex flex-col gap-3 py-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-2 text-[13px] text-body">
-              <span className="keycap">⌘</span>
-              <span className="keycap">K</span>
-              <span>Search commands, queues, settings, and activity</span>
-            </div>
-            <ServiceHealthDot />
           </div>
         </div>
       </header>
 
-      <main className="page-container py-8 md:py-10 lg:py-12">{children}</main>
+      <main className="page-container py-5 md:py-6 lg:py-7">{children}</main>
 
       {mobileNavOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 md:hidden" onClick={() => setMobileNavOpen(false)}>
@@ -98,7 +90,7 @@ export function Shell({
               <div className="flex items-center gap-3">
                 <Logo className="h-9 w-9" />
                 <div>
-                  <div className="text-[13px] font-medium text-body">Command center</div>
+                  <div className="text-[13px] font-medium text-body">Admin</div>
                   <div className="text-[18px] font-semibold text-text">Yagami</div>
                 </div>
               </div>
@@ -161,14 +153,14 @@ function NavButton({
       <button
         onClick={() => onSelect(item.id)}
         className={cn(
-          "flex w-full items-center gap-3 rounded-[10px] border px-4 py-3 text-left text-[14px] transition",
+          "flex w-full items-center gap-3 rounded-[8px] border px-3 py-2.5 text-left text-[14px] transition",
           active
             ? "border-white/12 bg-elevated text-text"
             : "border-border bg-panel text-body"
         )}
       >
         <span className={cn(
-          "grid h-8 w-8 place-items-center rounded-[8px] border border-border bg-card",
+          "grid h-7 w-7 place-items-center rounded-[6px] border border-border bg-card",
           active ? "text-text" : "text-body"
         )}>
           <Icon size={14} />
@@ -182,15 +174,15 @@ function NavButton({
     <button
       onClick={() => onSelect(item.id)}
       className={cn(
-        "group inline-flex items-center gap-2 rounded-[8px] border px-3 py-2 text-[14px] transition",
+        "group inline-flex h-8 items-center gap-1.5 rounded-[7px] border px-2.5 text-[13px] transition",
         active ? "border-white/12 bg-elevated text-text" : "border-transparent text-body hover:border-border hover:bg-panel hover:text-text"
       )}
     >
       <span className={cn(
-        "grid h-7 w-7 place-items-center rounded-[6px] border border-border bg-card",
+        "grid h-5 w-5 place-items-center rounded-[5px]",
         active ? "text-text" : "text-body group-hover:text-text"
       )}>
-        <Icon size={14} />
+        <Icon size={13} />
       </span>
       <span>{item.label}</span>
     </button>

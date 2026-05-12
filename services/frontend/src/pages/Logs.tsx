@@ -114,7 +114,7 @@ export function LogsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <Header
         eyebrow="Logs"
         title="Log viewer"
@@ -140,7 +140,7 @@ export function LogsPage() {
         }
       />
 
-      <div className="surface-dark flex flex-wrap gap-3 p-4 sm:p-5">
+      <div className="surface-dark flex flex-wrap gap-3 p-3 sm:p-4">
         <div className="flex h-11 items-center gap-2 rounded-[8px] border border-border bg-card px-4">
           <Search size={14} className="text-muted" />
           <input
@@ -179,7 +179,7 @@ export function LogsPage() {
         </div>
       </div>
 
-      <div ref={listRef} onScroll={handleScroll} className="command-card max-h-[70vh] overflow-auto">
+      <div ref={listRef} onScroll={handleScroll} className="command-card max-h-[72vh] overflow-auto">
         <div className="text-[12px] text-body">
           {filtered.length === 0 ? (
             <div className="p-6 text-center text-muted">No logs match these filters yet.</div>
@@ -236,7 +236,7 @@ function LogRow({ e }: { e: LogEntry }) {
   };
 
   return (
-    <div className="grid min-w-[760px] grid-cols-[110px_140px_72px_1fr] gap-4 border-b border-border px-4 py-3 hover:bg-card/70">
+    <div className="grid min-w-[760px] grid-cols-[110px_140px_72px_1fr] gap-4 border-b border-border px-4 py-2.5 hover:bg-card/70">
       <span className="tabular-nums text-muted">{formatRelative(e.ts)}</span>
       <span className={serviceColors[e.service] || "text-muted"}>{e.service}</span>
       <span className={cn("uppercase tracking-[0.12em]", colors[e.level] || "")}>{e.level}</span>

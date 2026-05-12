@@ -120,7 +120,7 @@ async def handle_download_complete(
         error = data.get("error", "Unknown error")
         await tg.send_message(
             target_chat,
-            f"❌ Download failed: {data.get('title', video_id)}\n{error}",
+            f"❌ Download failed: {_display_title(data)}\n{error}",
         )
         log.error("Download failed for %s: %s", video_id, error)
         return
@@ -266,7 +266,7 @@ async def handle_download_complete(
         try:
             await tg.send_message(
                 target_chat,
-                f"\u274c Upload failed: {data.get('title', video_id)}\n{exc}",
+                f"\u274c Upload failed: {_display_title(data)}\n{exc}",
             )
         except Exception:
             log.exception("Failed to send upload error notification for %s", video_id)
@@ -276,6 +276,10 @@ async def handle_download_complete(
         if upload_succeeded:
             _safe_remove(file_path)
         _safe_remove(thumb_path)
+
+
+def _display_title(data: dict) -> str:
+    return str(data.get("title") or "Untitled video")
 
 
 def prepare_thumbnail(thumbnail_url: str | None, video_path: str | None = None) -> str | None:
