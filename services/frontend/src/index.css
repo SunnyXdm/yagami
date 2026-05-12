@@ -4,24 +4,75 @@
 
 :root {
   color-scheme: dark;
+  --bg: 7 10 16;
+  --panel: 18 22 30;
+  --surface: 28 35 47;
+  --border: 53 61 77;
+  --muted: 151 160 181;
+  --text: 244 239 230;
+  --accent: 255 106 66;
+  --accent2: 84 146 255;
+  --ok: 74 201 117;
+  --warn: 245 171 73;
+  --err: 255 96 96;
 }
 
 html, body, #root { height: 100%; }
+html {
+  background: rgb(var(--bg));
+}
 body {
   @apply text-text font-sans antialiased;
   background:
-    radial-gradient(800px 400px at 80% -10%, rgba(124, 92, 255, 0.18), transparent 60%),
-    radial-gradient(600px 300px at -10% 20%, rgba(255, 61, 87, 0.12), transparent 60%),
-    #0a0a0c;
+    radial-gradient(820px 420px at 0% -10%, rgba(255, 106, 66, 0.22), transparent 60%),
+    radial-gradient(960px 540px at 100% 0%, rgba(84, 146, 255, 0.2), transparent 58%),
+    linear-gradient(180deg, rgba(24, 30, 42, 0.75), rgba(7, 10, 16, 1));
   background-attachment: fixed;
+  font-feature-settings: "ss01" 1, "cv05" 1, "tnum" 1;
+  overflow-x: hidden;
+  position: relative;
 }
 
-::selection { background: rgba(124, 92, 255, 0.45); color: #fff; }
+body::before,
+body::after {
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: fixed;
+}
+
+body::before {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.5), transparent 84%);
+  opacity: 0.16;
+}
+
+body::after {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.06), transparent 18%),
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.05), transparent 16%),
+    radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.03), transparent 22%);
+  opacity: 0.55;
+}
+
+#root {
+  isolation: isolate;
+  position: relative;
+}
+
+::selection { background: rgba(84, 146, 255, 0.38); color: rgb(var(--text)); }
 
 /* tiny utility for subtle dividers */
 .divider { border-color: rgba(255,255,255,0.06); }
 
+a {
+  transition: color 160ms ease, opacity 160ms ease, border-color 160ms ease;
+}
+
 /* nice scrollbar */
 *::-webkit-scrollbar { width: 10px; height: 10px; }
-*::-webkit-scrollbar-thumb { background: #1f1f25; border-radius: 6px; }
-*::-webkit-scrollbar-thumb:hover { background: #2a2a32; }
+*::-webkit-scrollbar-thumb { background: rgba(53, 61, 77, 0.9); border-radius: 6px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(84, 146, 255, 0.55); }

@@ -15,6 +15,7 @@ import json
 import logging
 import math
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -50,6 +51,9 @@ log = logging.getLogger(__name__)
 
 # Telegram MTProto max file size: 2 GB. We split at 1.95 GB to leave margin.
 MAX_UPLOAD_BYTES = 1_950_000_000
+TELEGRAM_THUMB_MAX_DIMENSION = 320
+TELEGRAM_THUMB_MAX_BYTES = 20_000
+YOUTUBE_THUMB_RE = re.compile(r"(?:i\.ytimg\.com|img\.youtube\.com)/vi(?:_webp)?/([a-zA-Z0-9_-]{11})/")
 
 
 async def handle_event(
@@ -160,6 +164,7 @@ async def handle_download_complete(
             message = await tg.send_file(
                 entity=target_chat,
                 file=file_path,
+                file_size=file_size,
                 caption=caption,
                 supports_streaming=True,
                 thumb=thumb_path,
@@ -195,6 +200,7 @@ async def handle_download_complete(
                 message = await tg.send_file(
                     entity=target_chat,
                     file=part_path,
+                    file_size=part_size,
                     caption=caption,
                     supports_streaming=True,
                     thumb=thumb_path,
@@ -273,16 +279,11 @@ async def handle_download_complete(
 
 
 def prepare_thumbnail(thumbnail_url: str | None, video_path: str | None = None) -> str | None:
-    """Download a YouTube thumbnail at full resolution.
+    """Prepare a Telegram-compatible JPEG thumbnail.
 
-    Telegram uses the thumbnail to render the video preview card. If the
-    thumbnail ratio doesn't match the video, the preview looks distorted.
-
-    Steps:
-      1. Get the video's width/height via ffprobe
-      2. Download the YouTube maxres thumbnail (1280x720)
-      3. Center-crop to match the video's exact aspect ratio
-      4. Save at maximum JPEG quality (no downscale, no compression artifacts)
+    Telegram ignores document thumbnails that are too large, so we keep the
+    sharpest available YouTube source, crop it to the video's aspect ratio,
+    and then compress it into Telegram's accepted thumbnail envelope.
     """
     if not thumbnail_url:
         return None
@@ -293,7 +294,7 @@ def prepare_thumbnail(thumbnail_url: str | None, video_path: str | None = None) 
 
         fd, tmp = tempfile.mkstemp(suffix=".jpg")
         os.close(fd)
-        urllib.request.urlretrieve(thumbnail_url, tmp)
+        source_url = _download_thumbnail_image(thumbnail_url, tmp)
 
         # Get the video's actual aspect ratio
         video_w, video_h = _get_video_dimensions(video_path)
@@ -302,18 +303,116 @@ def prepare_thumbnail(thumbnail_url: str | None, video_path: str | None = None) 
             if video_w and video_h:
                 img = _crop_to_ratio(img, video_w, video_h)
 
-            # Save at original resolution — Telegram handles its own resizing.
-            # No downscale; keep the full quality maxres thumbnail (1280x720).
+            img, saved_bytes = _finalize_telegram_thumbnail(img, tmp)
             out_w, out_h = img.size
-            img.save(tmp, "JPEG", quality=100, subsampling=0)
 
-        log.info("Prepared thumbnail (%dx%d, video %dx%d) from %s",
-                 out_w, out_h, video_w or 0, video_h or 0, thumbnail_url)
+        log.info(
+            "Prepared Telegram thumbnail (%dx%d, %d bytes, video %dx%d) from %s",
+            out_w,
+            out_h,
+            saved_bytes,
+            video_w or 0,
+            video_h or 0,
+            source_url,
+        )
         return tmp
     except Exception as e:
         log.warning("Failed to prepare thumbnail: %s", e)
         _safe_remove(tmp)
         return None
+
+
+def _download_thumbnail_image(thumbnail_url: str, output_path: str) -> str:
+    last_error: Exception | None = None
+    for candidate in _thumbnail_candidate_urls(thumbnail_url):
+        try:
+            with urllib.request.urlopen(candidate, timeout=10) as response:
+                data = response.read()
+            if not data:
+                continue
+            with open(output_path, "wb") as handle:
+                handle.write(data)
+            return candidate
+        except Exception as e:
+            last_error = e
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("No thumbnail candidates succeeded")
+
+
+def _thumbnail_candidate_urls(thumbnail_url: str) -> list[str]:
+    match = YOUTUBE_THUMB_RE.search(thumbnail_url)
+    if not match:
+        return [thumbnail_url]
+
+    video_id = match.group(1)
+    use_webp = "/vi_webp/" in thumbnail_url or thumbnail_url.endswith(".webp")
+    prefix = "vi_webp" if use_webp else "vi"
+    ext = "webp" if use_webp else "jpg"
+    candidates = [
+        f"https://i.ytimg.com/{prefix}/{video_id}/maxresdefault.{ext}",
+        f"https://i.ytimg.com/{prefix}/{video_id}/sddefault.{ext}",
+        f"https://i.ytimg.com/{prefix}/{video_id}/hqdefault.{ext}",
+        f"https://i.ytimg.com/{prefix}/{video_id}/mqdefault.{ext}",
+        thumbnail_url,
+    ]
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        deduped.append(candidate)
+    return deduped
+
+
+def _finalize_telegram_thumbnail(img, output_path: str):
+    from PIL import Image
+
+    working = img.convert("RGB")
+    for max_dimension in (TELEGRAM_THUMB_MAX_DIMENSION, 280, 240, 200):
+        sized = _resize_max_dimension(working, max_dimension)
+        for quality in (95, 90, 85, 80, 75, 70, 65, 60):
+            sized.save(
+                output_path,
+                "JPEG",
+                quality=quality,
+                optimize=True,
+                progressive=True,
+                subsampling=0,
+            )
+            saved_bytes = os.path.getsize(output_path)
+            if saved_bytes <= TELEGRAM_THUMB_MAX_BYTES:
+                return sized, saved_bytes
+
+    fallback = _resize_max_dimension(working, 160)
+    fallback.save(
+        output_path,
+        "JPEG",
+        quality=55,
+        optimize=True,
+        progressive=True,
+        subsampling=0,
+    )
+    return fallback, os.path.getsize(output_path)
+
+
+def _resize_max_dimension(img, max_dimension: int):
+    from PIL import Image
+
+    width, height = img.size
+    largest_side = max(width, height)
+    if largest_side <= max_dimension:
+        return img
+
+    scale = max_dimension / largest_side
+    resized = (
+        max(1, int(round(width * scale))),
+        max(1, int(round(height * scale))),
+    )
+    return img.resize(resized, Image.Resampling.LANCZOS)
 
 
 def _get_video_dimensions(video_path: str | None) -> tuple[int | None, int | None]:

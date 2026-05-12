@@ -6,8 +6,14 @@
 /// #[serde(rename_all = "snake_case")] → converts field names to snake_case in JSON
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QualityOption {
+    pub key: String,
+    pub label: String,
+}
+
 /// Incoming request from NATS (youtube-poller publishes these)
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct DownloadRequest {
     pub video_id: String,
     pub title: String,
@@ -20,6 +26,10 @@ pub struct DownloadRequest {
     /// If set, the completed download is sent to this chat instead of the likes channel.
     /// Used for admin-requested downloads via DM.
     pub requester_chat_id: Option<i64>,
+    #[serde(default)]
+    pub priority: i32,
+    #[serde(default)]
+    pub quality: Option<String>,
 }
 
 /// Outgoing result published to NATS (telegram-client consumes these)
@@ -38,6 +48,50 @@ pub struct DownloadResult {
     pub thumbnail: Option<String>,
     /// Forwarded from request — routes the result to the requester's chat
     pub requester_chat_id: Option<i64>,
+    pub priority: i32,
+    pub quality: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DownloadInspectRequest {
+    pub video_id: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DownloadInspectResponse {
+    pub video_id: String,
+    pub title: Option<String>,
+    pub thumbnail: Option<String>,
+    pub qualities: Vec<QualityOption>,
+    pub error: Option<String>,
+}
+
+impl DownloadInspectResponse {
+    pub fn success(
+        video_id: String,
+        title: Option<String>,
+        thumbnail: Option<String>,
+        qualities: Vec<QualityOption>,
+    ) -> Self {
+        Self {
+            video_id,
+            title,
+            thumbnail,
+            qualities,
+            error: None,
+        }
+    }
+
+    pub fn failure(video_id: String, error: String) -> Self {
+        Self {
+            video_id,
+            title: None,
+            thumbnail: None,
+            qualities: Vec::new(),
+            error: Some(error),
+        }
+    }
 }
 
 /// LEARNING: `impl` blocks add methods to a struct. Rust doesn't have
@@ -56,6 +110,8 @@ impl DownloadResult {
             duration: req.duration.clone(),
             thumbnail: req.thumbnail.clone(),
             requester_chat_id: req.requester_chat_id,
+            priority: req.priority,
+            quality: req.quality.clone(),
         }
     }
 
@@ -72,6 +128,8 @@ impl DownloadResult {
             duration: req.duration.clone(),
             thumbnail: req.thumbnail.clone(),
             requester_chat_id: req.requester_chat_id,
+            priority: req.priority,
+            quality: req.quality.clone(),
         }
     }
 }
@@ -92,6 +150,8 @@ mod tests {
             duration: Some("3:45".into()),
             thumbnail: None,
             requester_chat_id: None,
+            priority: 0,
+            quality: None,
         }
     }
 
@@ -103,14 +163,18 @@ mod tests {
         assert_eq!(req.video_id, "abc123");
         assert_eq!(req.title, "Test");
         assert!(req.channel.is_none());
+        assert_eq!(req.priority, 0);
+        assert!(req.quality.is_none());
     }
 
     #[test]
     fn test_download_request_with_metadata() {
-        let json = r#"{"video_id":"abc123","title":"Test","url":"https://youtube.com/watch?v=abc123","channel":"Ch","duration":"3:45"}"#;
+        let json = r#"{"video_id":"abc123","title":"Test","url":"https://youtube.com/watch?v=abc123","channel":"Ch","duration":"3:45","priority":100,"quality":"720"}"#;
         let req: DownloadRequest = serde_json::from_str(json).unwrap();
         assert_eq!(req.channel, Some("Ch".into()));
         assert_eq!(req.duration, Some("3:45".into()));
+        assert_eq!(req.priority, 100);
+        assert_eq!(req.quality.as_deref(), Some("720"));
     }
 
     #[test]
@@ -158,5 +222,29 @@ mod tests {
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("\"file_path\":null"));
         assert!(json.contains("\"success\":false"));
+    }
+
+    #[test]
+    fn test_download_inspect_response_success() {
+        let response = DownloadInspectResponse::success(
+            "abc123".into(),
+            Some("Test title".into()),
+            Some("https://i.ytimg.com/vi/abc123/maxresdefault.jpg".into()),
+            vec![
+                QualityOption {
+                    key: "best".into(),
+                    label: "Best".into(),
+                },
+                QualityOption {
+                    key: "1080".into(),
+                    label: "1080p".into(),
+                },
+            ],
+        );
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"video_id\":\"abc123\""));
+        assert!(json.contains("\"1080p\""));
+        assert!(json.contains("\"error\":null"));
     }
 }

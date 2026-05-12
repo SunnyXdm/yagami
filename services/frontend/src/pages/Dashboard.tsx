@@ -79,30 +79,44 @@ export function Dashboard() {
 
 export function Header({ title, subtitle, right }: { title: string; subtitle?: string; right?: React.ReactNode }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 mb-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {subtitle && <div className="text-sm text-muted mt-1">{subtitle}</div>}
+    <div className="relative mb-6 overflow-hidden rounded-[32px] border border-border/70 bg-panel/55 px-5 py-6 shadow-panel sm:px-6 lg:px-8">
+      <div className="absolute inset-y-0 right-0 w-52 bg-[radial-gradient(circle_at_center,rgba(84,146,255,.18),transparent_72%)]" />
+      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="max-w-3xl">
+          <div className="text-[10px] uppercase tracking-[0.36em] text-muted/80">Operations deck</div>
+          <h1 className="mt-3 font-display text-4xl leading-[0.95] tracking-tight sm:text-5xl">{title}</h1>
+          {subtitle && <div className="mt-3 max-w-2xl text-sm leading-relaxed text-muted sm:text-[15px]">{subtitle}</div>}
+        </div>
+        <div>
+          {right ?? (
+            <div className="inline-flex items-center gap-3 rounded-full border border-border/70 bg-bg/45 px-4 py-2 text-[11px] uppercase tracking-[0.28em] text-muted">
+              <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
+              Live telemetry
+            </div>
+          )}
+        </div>
       </div>
-      {right}
     </div>
   );
 }
 
 function Stat({ label, value, sub, accent }: { label: string; value: number; sub?: string; accent?: boolean }) {
   return (
-    <div className="bg-panel/60 border border-border rounded-xl p-4">
-      <div className="text-xs text-muted">{label}</div>
-      <div className={"text-3xl font-semibold mt-1 tabular-nums " + (accent ? "text-accent" : "")}>{value.toLocaleString()}</div>
-      {sub && <div className="text-xs text-muted mt-1">{sub}</div>}
+    <div className="group relative overflow-hidden rounded-[24px] border border-border/70 bg-panel/60 p-4 shadow-panel">
+      <div className={"absolute right-0 top-0 h-24 w-24 rounded-full blur-3xl " + (accent ? "bg-accent/20" : "bg-accent2/18")} />
+      <div className="relative">
+        <div className="text-[10px] uppercase tracking-[0.28em] text-muted/85">{label}</div>
+        <div className={"mt-4 font-display text-4xl leading-none tabular-nums " + (accent ? "text-accent" : "text-text")}>{value.toLocaleString()}</div>
+        {sub && <div className="mt-2 text-sm text-muted">{sub}</div>}
+      </div>
     </div>
   );
 }
 
 export function Card({ title, children, className = "" }: { title: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={"bg-panel/60 border border-border rounded-xl p-4 " + className}>
-      <div className="text-xs uppercase tracking-wider text-muted mb-3">{title}</div>
+    <div className={"rounded-[24px] border border-border/70 bg-panel/60 p-5 shadow-panel " + className}>
+      <div className="mb-4 text-[10px] uppercase tracking-[0.32em] text-muted/85">{title}</div>
       {children}
     </div>
   );
@@ -110,9 +124,9 @@ export function Card({ title, children, className = "" }: { title: string; child
 
 function Row({ label, value, bad }: { label: string; value: number; bad?: boolean }) {
   return (
-    <div className="flex justify-between text-sm py-1.5">
+    <div className="flex justify-between border-b border-border/40 py-2 text-sm last:border-b-0">
       <span className="text-muted">{label}</span>
-      <span className={"tabular-nums " + (bad ? "text-err" : "")}>{value}</span>
+      <span className={"tabular-nums font-medium " + (bad ? "text-err" : "text-text")}>{value}</span>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 """Main client — Telethon ↔ NATS bridge with bot commands and hot-reload."""
 
 import asyncio
+from dataclasses import dataclass
 import json
 import logging
 import os
@@ -8,7 +9,7 @@ import re
 import time
 
 import nats
-from telethon import TelegramClient, events
+from telethon import Button, TelegramClient, events
 from telethon.sessions import StringSession
 
 from .config import Config
@@ -22,6 +23,27 @@ YOUTUBE_RE = re.compile(
 )
 
 START_TS = time.time()
+ADMIN_REQUEST_PRIORITY = 100
+PENDING_DOWNLOAD_TTL_SECONDS = 15 * 60
+DEFAULT_QUALITY_OPTIONS = [
+    {"key": "best", "label": "Best"},
+    {"key": "1080", "label": "1080p"},
+    {"key": "720", "label": "720p"},
+    {"key": "480", "label": "480p"},
+    {"key": "360", "label": "360p"},
+]
+
+
+@dataclass
+class PendingDownloadRequest:
+    video_id: str
+    url: str
+    title: str
+    thumbnail: str | None
+    created_at: float
+
+
+_pending_downloads: dict[str, PendingDownloadRequest] = {}
 
 
 async def run() -> None:
@@ -166,7 +188,7 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
             "Available commands:\n"
             "• `/ping` — quick health check\n"
             "• `/status` — full system status\n\n"
-            "Send any YouTube link and I'll download it for you."
+            "Send any YouTube link and I'll show quality buttons before queueing it."
         )
 
     @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/ping(?:@\w+)?$"))
@@ -201,16 +223,83 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
         video_id = m.group(1)
         url = f"https://www.youtube.com/watch?v={video_id}"
         log.info("Admin requested download: %s", url)
-        await event.reply(f"Downloading `{video_id}`…")
-        await nc.publish(
-            "download.request",
-            json.dumps({
-                "video_id": video_id,
-                "title": video_id,
-                "url": url,
-                "requester_chat_id": admin,
-            }).encode(),
+        probe = await _probe_download_options(nc, video_id, url)
+        title = probe.get("title") or video_id
+        thumbnail = probe.get("thumbnail")
+
+        if not config.use_bot:
+            await _publish_download_request(
+                nc,
+                {
+                    "video_id": video_id,
+                    "title": title,
+                    "url": url,
+                    "thumbnail": thumbnail,
+                    "requester_chat_id": admin,
+                    "priority": ADMIN_REQUEST_PRIORITY,
+                },
+            )
+            await event.reply(
+                "Quality buttons require Telegram bot mode. "
+                f"Queued `{title}` at `Best`."
+            )
+            return
+
+        _remember_pending_download(
+            PendingDownloadRequest(
+                video_id=video_id,
+                url=url,
+                title=title,
+                thumbnail=thumbnail,
+                created_at=time.time(),
+            )
         )
+
+        lines = [f"Choose quality for `{title}`."]
+        if probe.get("fallback_reason"):
+            lines.append("Format probe fell back to common quality caps.")
+        await event.reply(
+            "\n".join(lines),
+            buttons=_build_quality_buttons(video_id, probe["qualities"]),
+        )
+
+    @tg.on(events.CallbackQuery(from_users=[admin], pattern=rb"^dl:"))
+    async def _on_quality_selected(event):
+        try:
+            _, video_id, quality_key = event.data.decode().split(":", 2)
+        except ValueError:
+            await event.answer("Invalid selection", alert=True)
+            return
+
+        pending = _pending_downloads.get(video_id)
+        if quality_key == "cancel":
+            _pending_downloads.pop(video_id, None)
+            await event.answer("Cancelled")
+            await event.edit(f"Cancelled `{video_id}`.")
+            return
+
+        if pending is None or _pending_download_expired(pending):
+            _pending_downloads.pop(video_id, None)
+            await event.answer("Selection expired", alert=True)
+            await event.edit("That quality picker expired. Send the link again.")
+            return
+
+        await _publish_download_request(
+            nc,
+            {
+                "video_id": pending.video_id,
+                "title": pending.title,
+                "url": pending.url,
+                "thumbnail": pending.thumbnail,
+                "requester_chat_id": admin,
+                "priority": ADMIN_REQUEST_PRIORITY,
+                "quality": None if quality_key == "best" else quality_key,
+            },
+        )
+        _pending_downloads.pop(video_id, None)
+        label = _quality_label(quality_key)
+        await event.answer(f"Queued {label}")
+        await event.edit(f"Queued `{pending.title}` at `{label}`.")
 
 
 async def _status_heartbeat(nc, status_fn) -> None:
@@ -237,3 +326,93 @@ def _fmt_uptime(seconds: float) -> str:
     if h < 24: return f"{h}h {m}m"
     d, h = divmod(h, 24)
     return f"{d}d {h}h"
+
+
+def _remember_pending_download(pending: PendingDownloadRequest) -> None:
+    _prune_pending_downloads()
+    _pending_downloads[pending.video_id] = pending
+
+
+def _prune_pending_downloads() -> None:
+    now = time.time()
+    expired = [
+        video_id
+        for video_id, pending in _pending_downloads.items()
+        if now - pending.created_at > PENDING_DOWNLOAD_TTL_SECONDS
+    ]
+    for video_id in expired:
+        _pending_downloads.pop(video_id, None)
+
+
+def _pending_download_expired(pending: PendingDownloadRequest) -> bool:
+    return time.time() - pending.created_at > PENDING_DOWNLOAD_TTL_SECONDS
+
+
+async def _probe_download_options(nc, video_id: str, url: str) -> dict:
+    fallback = {"qualities": list(DEFAULT_QUALITY_OPTIONS), "fallback_reason": "probe_failed"}
+    try:
+        msg = await nc.request(
+            "downloader.inspect",
+            json.dumps({"video_id": video_id, "url": url}).encode(),
+            timeout=15,
+        )
+        payload = json.loads(msg.data.decode())
+    except Exception as e:
+        log.warning("Quality probe failed for %s: %s", video_id, e)
+        return fallback
+
+    qualities = _normalize_quality_options(payload.get("qualities") or [])
+    result = {
+        "title": payload.get("title"),
+        "thumbnail": payload.get("thumbnail"),
+        "qualities": qualities or list(DEFAULT_QUALITY_OPTIONS),
+    }
+    if payload.get("error") or not qualities:
+        result["fallback_reason"] = payload.get("error") or "no_qualities"
+    return result
+
+
+def _normalize_quality_options(options: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    normalized: list[dict] = []
+    for option in options:
+        key = str(option.get("key") or "").strip()
+        label = str(option.get("label") or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        normalized.append({"key": key, "label": label or _quality_label(key)})
+
+    if not normalized:
+        return []
+
+    normalized.sort(key=lambda option: _quality_sort_key(option["key"]))
+    return normalized
+
+
+def _quality_sort_key(key: str) -> tuple[int, int]:
+    if key == "best":
+        return (0, 0)
+    try:
+        return (1, -int(key))
+    except ValueError:
+        return (2, 0)
+
+
+def _quality_label(key: str) -> str:
+    if key == "best":
+        return "Best"
+    return f"{key}p"
+
+
+def _build_quality_buttons(video_id: str, qualities: list[dict]) -> list[list[Button]]:
+    rows = [
+        [Button.inline(option["label"], data=f"dl:{video_id}:{option['key']}".encode())]
+        for option in qualities
+    ]
+    rows.append([Button.inline("Cancel", data=f"dl:{video_id}:cancel".encode())])
+    return rows
+
+
+async def _publish_download_request(nc, payload: dict) -> None:
+    await nc.publish("download.request", json.dumps(payload).encode())

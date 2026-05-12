@@ -21,7 +21,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
         <div className="mb-8 flex items-center gap-3">
           <Logo />
           <div>
-            <div className="text-xl font-semibold tracking-tight">Yagami</div>
+            <div className="font-display text-3xl leading-none tracking-tight">Yagami</div>
             <div className="text-xs text-muted">Sign in to continue</div>
           </div>
         </div>
@@ -56,7 +56,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 export function Logo() {
   return (
-    <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-accent to-accent2 grid place-items-center font-mono text-white text-lg shadow-glow">
+    <div className="grid h-11 w-11 place-items-center rounded-[16px] border border-white/10 bg-[linear-gradient(135deg,rgba(255,106,66,.95),rgba(84,146,255,.88))] font-display text-xl text-white shadow-glow">
       Y
     </div>
   );
