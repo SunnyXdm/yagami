@@ -36,3 +36,7 @@ export const apiPost = <T,>(p: string, body?: unknown) =>
   api<T>(p, { method: "POST", body: body ? JSON.stringify(body) : undefined });
 export const apiPut = <T,>(p: string, body?: unknown) =>
   api<T>(p, { method: "PUT", body: body ? JSON.stringify(body) : undefined });
+
+export function apiStream(path = "stream") {
+  return new EventSource(path.startsWith("/") ? path : `/api/${path}`, { withCredentials: true });
+}

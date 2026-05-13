@@ -4,7 +4,9 @@ import asyncio
 import json
 import math
 import os
+import sys
 import tempfile
+from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -15,6 +17,7 @@ from telegram_client.handlers import (
     TELEGRAM_THUMB_MAX_BYTES,
     TELEGRAM_UPLOAD_PART_SIZE_KB,
     _make_upload_progress_callback,
+    _upload_file_to_telegram,
     handle_download_complete,
     handle_event,
     prepare_thumbnail,
@@ -389,6 +392,127 @@ class TestUploadProgressCallback:
             payload["progress_text"],
             " ETA 10s",
         )
+
+
+class TestParallelTelegramUpload:
+    @pytest.mark.asyncio
+    async def test_parallel_upload_uses_exported_senders_for_large_files(self):
+        class FakeInputFileBig:
+            def __init__(self, file_id, parts, name):
+                self.id = file_id
+                self.parts = parts
+                self.name = name
+
+        class FakeSaveBigFilePartRequest:
+            def __init__(self, file_id, file_part, file_total_parts, bytes_):
+                self.file_id = file_id
+                self.file_part = file_part
+                self.file_total_parts = file_total_parts
+                self.bytes = bytes_
+
+        class FakeSender:
+            def __init__(self):
+                self.requests = []
+                self.disconnect = AsyncMock()
+
+            async def send(self, request):
+                self.requests.append(request)
+                return True
+
+        file_size = 11 * 1024 * 1024
+        senders = [FakeSender() for _ in range(3)]
+        tg = MagicMock()
+        tg.session = MagicMock(dc_id=4)
+        tg.upload_file = AsyncMock()
+        tg._create_exported_sender = AsyncMock(side_effect=senders)
+        progress_callback = AsyncMock()
+
+        helpers_mod = ModuleType("telethon.helpers")
+
+        async def _maybe_await(value):
+            if asyncio.iscoroutine(value):
+                return await value
+            return value
+
+        helpers_mod.generate_random_long = lambda: 123456789
+        helpers_mod._maybe_await = _maybe_await
+
+        functions_mod = ModuleType("telethon.tl.functions")
+        functions_mod.upload = ModuleType("telethon.tl.functions.upload")
+        functions_mod.upload.SaveBigFilePartRequest = FakeSaveBigFilePartRequest
+
+        types_mod = ModuleType("telethon.tl.types")
+        types_mod.InputFileBig = FakeInputFileBig
+
+        telethon_mod = ModuleType("telethon")
+        telethon_mod.helpers = helpers_mod
+
+        tl_mod = ModuleType("telethon.tl")
+        tl_mod.functions = functions_mod
+        tl_mod.types = types_mod
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"x" * file_size)
+            temp_path = f.name
+
+        try:
+            with patch("telegram_client.handlers.TELEGRAM_PARALLEL_UPLOAD_CONNECTIONS", 3), patch(
+                "telegram_client.handlers.TELEGRAM_PARALLEL_UPLOAD_MIN_BYTES", 1
+            ), patch.dict(
+                sys.modules,
+                {
+                    "telethon": telethon_mod,
+                    "telethon.helpers": helpers_mod,
+                    "telethon.tl": tl_mod,
+                    "telethon.tl.functions": functions_mod,
+                    "telethon.tl.types": types_mod,
+                },
+            ):
+                uploaded = await _upload_file_to_telegram(
+                    tg,
+                    temp_path,
+                    file_size=file_size,
+                    progress_callback=progress_callback,
+                )
+
+            assert uploaded.parts == math.ceil(file_size / (TELEGRAM_UPLOAD_PART_SIZE_KB * 1024))
+            assert uploaded.name == os.path.basename(temp_path)
+            assert tg._create_exported_sender.await_count == 3
+            assert sum(len(sender.requests) for sender in senders) == uploaded.parts
+            assert progress_callback.await_args_list[-1].args == (file_size, file_size)
+            tg.upload_file.assert_not_called()
+            for sender in senders:
+                sender.disconnect.assert_awaited_once()
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
+
+    @pytest.mark.asyncio
+    async def test_parallel_upload_falls_back_to_sequential_when_parallel_path_fails(self):
+        file_size = 11 * 1024 * 1024
+        tg = MagicMock()
+        tg.session = MagicMock(dc_id=4)
+        tg.upload_file = AsyncMock(return_value="sequential-upload")
+        tg._create_exported_sender = AsyncMock(side_effect=RuntimeError("boom"))
+
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            f.write(b"x" * file_size)
+            temp_path = f.name
+
+        try:
+            with patch("telegram_client.handlers.TELEGRAM_PARALLEL_UPLOAD_MIN_BYTES", 1):
+                uploaded = await _upload_file_to_telegram(
+                    tg,
+                    temp_path,
+                    file_size=file_size,
+                    progress_callback=None,
+                )
+
+            assert uploaded == "sequential-upload"
+            tg.upload_file.assert_awaited_once()
+        finally:
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
 
 
 # ── _safe_remove ────────────────────────────────────────────

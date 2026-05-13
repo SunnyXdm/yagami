@@ -54,6 +54,9 @@ MAX_UPLOAD_BYTES = 1_950_000_000
 TELEGRAM_THUMB_MAX_DIMENSION = 320
 TELEGRAM_THUMB_MAX_BYTES = 190_000
 TELEGRAM_UPLOAD_PART_SIZE_KB = 512
+TELEGRAM_BIG_FILE_THRESHOLD_BYTES = 10 * 1024 * 1024
+TELEGRAM_PARALLEL_UPLOAD_CONNECTIONS = 8
+TELEGRAM_PARALLEL_UPLOAD_MIN_BYTES = 64 * 1024 * 1024
 YOUTUBE_THUMB_RE = re.compile(r"(?:i\.ytimg\.com|img\.youtube\.com)/vi(?:_webp)?/([a-zA-Z0-9_-]{11})/")
 
 
@@ -292,10 +295,10 @@ async def _send_uploaded_video(
     video_attrs: list,
     progress_callback,
 ):
-    uploaded = await tg.upload_file(
+    uploaded = await _upload_file_to_telegram(
+        tg,
         file_path,
         file_size=file_size,
-        part_size_kb=TELEGRAM_UPLOAD_PART_SIZE_KB,
         progress_callback=progress_callback,
     )
     return await tg.send_file(
@@ -307,6 +310,159 @@ async def _send_uploaded_video(
         thumb=thumb_path,
         attributes=video_attrs,
     )
+
+
+async def _upload_file_to_telegram(
+    tg: TelegramClient,
+    file_path: str,
+    *,
+    file_size: int,
+    progress_callback,
+):
+    upload_kwargs = {
+        "file_size": file_size,
+        "part_size_kb": TELEGRAM_UPLOAD_PART_SIZE_KB,
+        "progress_callback": progress_callback,
+    }
+    if file_size < TELEGRAM_PARALLEL_UPLOAD_MIN_BYTES:
+        return await tg.upload_file(file_path, **upload_kwargs)
+
+    try:
+        return await _upload_file_parallel(
+            tg,
+            file_path,
+            file_size=file_size,
+            part_size_kb=TELEGRAM_UPLOAD_PART_SIZE_KB,
+            progress_callback=progress_callback,
+        )
+    except Exception:
+        log.exception(
+            "Parallel Telegram upload failed for %s; retrying sequentially.",
+            file_path,
+        )
+        return await tg.upload_file(file_path, **upload_kwargs)
+
+
+async def _upload_file_parallel(
+    tg: TelegramClient,
+    file_path: str,
+    *,
+    file_size: int,
+    part_size_kb: int,
+    progress_callback,
+):
+    from telethon import helpers
+    from telethon.tl import functions, types
+
+    if file_size <= TELEGRAM_BIG_FILE_THRESHOLD_BYTES:
+        raise ValueError("parallel upload only supports Telegram big files")
+
+    part_size = int(part_size_kb * 1024)
+    if part_size <= 0 or part_size % 1024 != 0:
+        raise ValueError("invalid Telegram upload part size")
+
+    session = getattr(tg, "session", None)
+    dc_id = getattr(session, "dc_id", 0) or getattr(getattr(tg, "_sender", None), "dc_id", 0)
+    if not dc_id or not hasattr(tg, "_create_exported_sender"):
+        raise RuntimeError("parallel upload requires an active Telegram DC sender")
+
+    part_count = (file_size + part_size - 1) // part_size
+    worker_count = min(TELEGRAM_PARALLEL_UPLOAD_CONNECTIONS, part_count)
+    if worker_count < 2:
+        raise RuntimeError("parallel upload requires at least two Telegram workers")
+
+    file_id = helpers.generate_random_long()
+    file_name = os.path.basename(file_path) or str(file_id)
+    if not os.path.splitext(file_name)[-1]:
+        file_name += ".bin"
+
+    log.info(
+        "Parallel Telegram upload starting: %d bytes in %d chunks via %d senders",
+        file_size,
+        part_count,
+        worker_count,
+    )
+
+    queue: asyncio.Queue[tuple[int, bytes] | None] = asyncio.Queue(maxsize=worker_count * 2)
+    stop_event = asyncio.Event()
+    progress_lock = asyncio.Lock()
+    uploaded_bytes = 0
+    first_error: Exception | None = None
+    senders = []
+    worker_tasks: list[asyncio.Task[None]] = []
+
+    async def worker(sender) -> None:
+        nonlocal uploaded_bytes, first_error
+
+        while True:
+            item = await queue.get()
+            try:
+                if item is None:
+                    return
+
+                if stop_event.is_set():
+                    continue
+
+                part_index, part = item
+                request = functions.upload.SaveBigFilePartRequest(file_id, part_index, part_count, part)
+                result = await sender.send(request)
+                if not result:
+                    raise RuntimeError(f"Failed to upload Telegram file part {part_index}.")
+
+                if progress_callback:
+                    async with progress_lock:
+                        uploaded_bytes += len(part)
+                        completed_bytes = uploaded_bytes
+                    await helpers._maybe_await(progress_callback(completed_bytes, file_size))
+            except Exception as exc:
+                if first_error is None:
+                    first_error = exc
+                stop_event.set()
+            finally:
+                queue.task_done()
+
+    try:
+        for _ in range(worker_count):
+            senders.append(await tg._create_exported_sender(dc_id))
+
+        worker_tasks = [asyncio.create_task(worker(sender)) for sender in senders]
+
+        with open(file_path, "rb") as handle:
+            for part_index in range(part_count):
+                if stop_event.is_set():
+                    break
+
+                part = handle.read(part_size)
+                if len(part) != part_size and part_index < part_count - 1:
+                    raise ValueError(
+                        f"read less than {part_size} bytes before reaching the end of {file_path}"
+                    )
+
+                await queue.put((part_index, part))
+
+        for _ in worker_tasks:
+            await queue.put(None)
+
+        await queue.join()
+        if worker_tasks:
+            await asyncio.gather(*worker_tasks, return_exceptions=True)
+
+        if first_error is not None:
+            raise first_error
+
+        log.info(
+            "Parallel Telegram upload finished: %d bytes across %d chunks via %d senders",
+            file_size,
+            part_count,
+            worker_count,
+        )
+        return types.InputFileBig(file_id, part_count, file_name)
+    finally:
+        for sender in senders:
+            try:
+                await sender.disconnect()
+            except Exception:
+                log.debug("Failed to disconnect exported Telegram sender cleanly", exc_info=True)
 
 
 def _display_title(data: dict) -> str:

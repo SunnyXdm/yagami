@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
-import { apiGet, apiPost } from "../lib/api";
+import { apiGet, apiPost, apiStream } from "../lib/api";
 import { cn, formatBytes, formatRelative } from "../lib/utils";
 import { Header } from "./Dashboard";
 
@@ -46,7 +46,7 @@ export function DownloadsPage() {
   });
 
   useEffect(() => {
-    const es = new EventSource("/api/stream");
+    const es = apiStream();
 
     const merge = (videoId: string, next: LiveUploadState) => {
       setLiveUploads((prev) => ({
@@ -66,6 +66,9 @@ export function DownloadsPage() {
           status: payload.status || "uploading",
           uploaded_bytes: payload.uploaded_bytes,
           total_bytes: payload.total_bytes,
+          progress_text: payload.progress_text,
+          speed_text: payload.speed_text,
+          eta_text: payload.eta_text,
           part: payload.part,
           total_parts: payload.total_parts,
         });

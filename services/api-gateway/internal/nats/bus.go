@@ -21,7 +21,7 @@ type Event struct {
 }
 
 func NewBus() *Bus {
-	return &Bus{subs: map[chan Event]struct{}{}, bufLen: 32}
+	return &Bus{subs: map[chan Event]struct{}{}, bufLen: 256}
 }
 
 func (b *Bus) Subscribe() (<-chan Event, func()) {

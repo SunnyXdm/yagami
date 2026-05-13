@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Pause, Play, Search } from "lucide-react";
-import { apiGet } from "../lib/api";
+import { apiGet, apiStream } from "../lib/api";
 import { cn, formatRelative } from "../lib/utils";
 import { Header } from "./Dashboard";
 
@@ -27,6 +27,7 @@ export function LogsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const nextLiveId = useRef(-1);
 
   const allServices = useQuery({
     queryKey: ["log-services"],
@@ -79,10 +80,19 @@ export function LogsPage() {
 
   useEffect(() => {
     if (!follow) return;
-    const es = new EventSource("/api/stream");
+    const es = apiStream();
     const onLog = (ev: MessageEvent) => {
       try {
-        const entry = JSON.parse(ev.data);
+        const raw = JSON.parse(ev.data);
+        const entry: LogEntry = {
+          id: typeof raw?.id === "number" && raw.id > 0 ? raw.id : nextLiveId.current--,
+          ts: typeof raw?.ts === "string" ? raw.ts : new Date().toISOString(),
+          service: typeof raw?.service === "string" ? raw.service : "unknown",
+          level: typeof raw?.level === "string" ? raw.level : "info",
+          message: typeof raw?.message === "string" ? raw.message : "",
+          fields: raw?.fields,
+          error: typeof raw?.error === "string" ? raw.error : null,
+        };
         if (typeof entry?.message === "string") {
           setLogs((prev) => prependLog(prev, entry, services, level, q));
         }
@@ -201,20 +211,27 @@ function prependLog(prev: LogEntry[], entry: LogEntry, services: string[], level
   if (services.length && !services.includes(entry.service)) return prev;
   if (level && entry.level !== level) return prev;
   if (q && !entry.message.toLowerCase().includes(q.toLowerCase())) return prev;
-  if (prev.some((value) => value.id === entry.id)) return prev;
+  const incomingKey = logIdentity(entry);
+  if (prev.some((value) => logIdentity(value) === incomingKey)) return prev;
   const next = [entry, ...prev];
   if (next.length > 2000) next.length = 2000;
   return next;
 }
 
+function logIdentity(entry: LogEntry) {
+  if (typeof entry.id === "number" && entry.id > 0) return `id:${entry.id}`;
+  return `live:${entry.ts}:${entry.service}:${entry.level}:${entry.message}`;
+}
+
 function appendOlder(prev: LogEntry[], older: LogEntry[]) {
   if (older.length === 0) return prev;
-  const seen = new Set(prev.map((entry) => entry.id));
+  const seen = new Set(prev.map(logIdentity));
   const next = prev.slice();
   for (const entry of older) {
-    if (!seen.has(entry.id)) {
+    const key = logIdentity(entry);
+    if (!seen.has(key)) {
       next.push(entry);
-      seen.add(entry.id);
+      seen.add(key);
     }
   }
   return next;
