@@ -11,6 +11,7 @@ import pytest
 from telegram_client.config import Config
 from telegram_client.handlers import (
     MAX_UPLOAD_BYTES,
+    TELEGRAM_THUMB_MAX_BYTES,
     TELEGRAM_UPLOAD_PART_SIZE_KB,
     handle_download_complete,
     handle_event,
@@ -329,6 +330,9 @@ class TestCropToRatio:
 class TestSplitVideoConstants:
     def test_max_upload_constant(self):
         assert MAX_UPLOAD_BYTES == 1_950_000_000
+
+    def test_thumbnail_budget_keeps_previews_crisp(self):
+        assert TELEGRAM_THUMB_MAX_BYTES >= 180_000
 
     def test_part_calculation(self):
         """Verify the number of parts for a given file size."""

@@ -388,8 +388,12 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
             buttons=_build_quality_buttons(video_id, probe["qualities"]),
         )
 
-    @tg.on(events.CallbackQuery(from_users=[admin], pattern=rb"^dl:"))
+    @tg.on(events.CallbackQuery(pattern=rb"^dl:"))
     async def _on_quality_selected(event):
+        if getattr(event, "sender_id", None) != admin:
+            await event.answer("Not allowed", alert=True)
+            return
+
         try:
             _, video_id, quality_key = event.data.decode().split(":", 2)
         except ValueError:

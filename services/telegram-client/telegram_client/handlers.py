@@ -52,7 +52,7 @@ log = logging.getLogger(__name__)
 # Telegram MTProto max file size: 2 GB. We split at 1.95 GB to leave margin.
 MAX_UPLOAD_BYTES = 1_950_000_000
 TELEGRAM_THUMB_MAX_DIMENSION = 320
-TELEGRAM_THUMB_MAX_BYTES = 20_000
+TELEGRAM_THUMB_MAX_BYTES = 190_000
 TELEGRAM_UPLOAD_PART_SIZE_KB = 512
 YOUTUBE_THUMB_RE = re.compile(r"(?:i\.ytimg\.com|img\.youtube\.com)/vi(?:_webp)?/([a-zA-Z0-9_-]{11})/")
 
@@ -409,13 +409,13 @@ def _finalize_telegram_thumbnail(img, output_path: str):
     working = img.convert("RGB")
     for max_dimension in (TELEGRAM_THUMB_MAX_DIMENSION, 280, 240, 200):
         sized = _resize_max_dimension(working, max_dimension)
-        for quality in (95, 90, 85, 80, 75, 70, 65, 60):
+        for quality in (95, 92, 90, 88, 85, 82, 80, 75):
             sized.save(
                 output_path,
                 "JPEG",
                 quality=quality,
                 optimize=True,
-                progressive=True,
+                progressive=False,
                 subsampling=0,
             )
             saved_bytes = os.path.getsize(output_path)
@@ -426,9 +426,9 @@ def _finalize_telegram_thumbnail(img, output_path: str):
     fallback.save(
         output_path,
         "JPEG",
-        quality=55,
+        quality=75,
         optimize=True,
-        progressive=True,
+        progressive=False,
         subsampling=0,
     )
     return fallback, os.path.getsize(output_path)
@@ -653,7 +653,7 @@ def _make_upload_progress_callback(
         return None
 
     loop = asyncio.get_running_loop()
-    last_sent = {"bytes": -1, "ts": 0.0}
+    last_sent = {"bytes": -1, "ts": 0.0, "log_ts": 0.0}
 
     def callback(current: int | float, total: int | float) -> None:
         sent_now = max(bytes_before_part, min(bytes_before_part + int(current), total_bytes))
@@ -666,6 +666,17 @@ def _make_upload_progress_callback(
         elapsed = max(now - started_at, 0.001)
         bytes_per_second = sent_now / elapsed
         remaining = max(total_bytes - sent_now, 0)
+        progress_text = _format_upload_progress(sent_now, total_bytes, bytes_per_second)
+        eta_text = _format_eta(remaining, bytes_per_second)
+
+        if now - last_sent["log_ts"] >= 30.0 or sent_now >= total_bytes:
+            last_sent["log_ts"] = now
+            log.info(
+                "%s%s",
+                progress_text,
+                f" ETA {eta_text}" if eta_text else "",
+            )
+
         loop.create_task(
             _publish_download_event(
                 nc,
@@ -675,9 +686,9 @@ def _make_upload_progress_callback(
                     "status": "uploading",
                     "uploaded_bytes": sent_now,
                     "total_bytes": total_bytes,
-                    "progress_text": _format_upload_progress(sent_now, total_bytes, bytes_per_second),
+                    "progress_text": progress_text,
                     "speed_text": _format_rate(bytes_per_second),
-                    "eta_text": _format_eta(remaining, bytes_per_second),
+                    "eta_text": eta_text,
                     "part": part,
                     "total_parts": total_parts,
                 },
