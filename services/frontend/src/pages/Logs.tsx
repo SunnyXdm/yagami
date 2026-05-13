@@ -24,11 +24,14 @@ export function LogsPage() {
   const [q, setQ] = useState("");
   const [follow, setFollow] = useState(true);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [streamStatus, setStreamStatus] = useState<"connecting" | "live" | "retrying">("connecting");
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const nextLiveId = useRef(-1);
+  const lastQuerySignature = useRef("");
   const now = useNow();
+  const querySignature = useMemo(() => JSON.stringify([services, level, q]), [services.join(","), level, q]);
 
   const allServices = useQuery({
     queryKey: ["log-services"],
@@ -46,16 +49,24 @@ export function LogsPage() {
       u.set("limit", String(PAGE_SIZE));
       return apiGet<LogEntry[]>(`logs?${u.toString()}`);
     },
+    refetchInterval: follow ? 2_000 : 15_000,
   });
 
   useEffect(() => {
     if (!initial.data) return;
-    setLogs(initial.data);
-    setHasMore(initial.data.length === PAGE_SIZE);
-    if (listRef.current) {
-      listRef.current.scrollTop = 0;
+    if (lastQuerySignature.current !== querySignature) {
+      lastQuerySignature.current = querySignature;
+      setLogs(initial.data);
+      if (listRef.current) {
+        listRef.current.scrollTop = 0;
+      }
+      setHasMore(initial.data.length === PAGE_SIZE);
+      return;
     }
-  }, [initial.data]);
+
+    setLogs((prev) => mergeFreshLogs(prev, initial.data));
+    setHasMore(initial.data.length === PAGE_SIZE);
+  }, [initial.data, querySignature]);
 
   async function loadOlder() {
     if (loadingMore || !hasMore || logs.length === 0) return;
@@ -80,8 +91,14 @@ export function LogsPage() {
   }
 
   useEffect(() => {
-    if (!follow) return;
+    if (!follow) {
+      setStreamStatus("connecting");
+      return;
+    }
+    setStreamStatus("connecting");
     const es = apiStream();
+    es.onopen = () => setStreamStatus("live");
+    es.onerror = () => setStreamStatus("retrying");
     const onLog = (ev: MessageEvent) => {
       try {
         const raw = JSON.parse(ev.data);
@@ -130,24 +147,33 @@ export function LogsPage() {
         eyebrow="Logs"
         title="Log viewer"
         right={
-          <button
-            onClick={() => {
-              setFollow((value) => {
-                const next = !value;
-                if (next && listRef.current) {
-                  listRef.current.scrollTop = 0;
-                }
-                return next;
-              });
-            }}
-            className={cn(
-              "inline-flex h-9 items-center gap-2 rounded-[8px] border px-4 text-[13px] font-medium transition",
-              follow ? "border-white/12 bg-elevated text-text" : "border-border bg-panel text-body hover:text-text",
-            )}
-          >
-            {follow ? <Pause size={14} /> : <Play size={14} />}
-            {follow ? "Live" : "Paused"}
-          </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={cn(
+                  "inline-flex h-9 items-center gap-2 rounded-[8px] border px-3 text-[12px] text-body",
+                  streamStatus === "live" ? "border-accentGreen/30 bg-accentGreen/10 text-accentGreen" : "border-border bg-panel",
+                )}>
+                  <span className={cn("h-2 w-2 rounded-full", streamStatus === "live" ? "bg-accentGreen" : "bg-accentYellow")} />
+                  {follow ? (streamStatus === "live" ? "SSE live" : "reconnecting") : "SSE paused"}
+                </span>
+                <button
+                  onClick={() => {
+                    setFollow((value) => {
+                      const next = !value;
+                      if (next && listRef.current) {
+                        listRef.current.scrollTop = 0;
+                      }
+                      return next;
+                    });
+                  }}
+                  className={cn(
+                    "inline-flex h-9 items-center gap-2 rounded-[8px] border px-4 text-[13px] font-medium transition",
+                    follow ? "border-white/12 bg-elevated text-text" : "border-border bg-panel text-body hover:text-text",
+                  )}
+                >
+                  {follow ? <Pause size={14} /> : <Play size={14} />}
+                  {follow ? "Live" : "Paused"}
+                </button>
+              </div>
         }
       />
 
@@ -235,6 +261,14 @@ function appendOlder(prev: LogEntry[], older: LogEntry[]) {
       seen.add(key);
     }
   }
+  return next;
+}
+
+function mergeFreshLogs(prev: LogEntry[], fresh: LogEntry[]) {
+  const seen = new Set(fresh.map(logIdentity));
+  const liveOnly = prev.filter((entry) => entry.id <= 0 && !seen.has(logIdentity(entry)));
+  const next = [...liveOnly, ...fresh];
+  if (next.length > 2000) next.length = 2000;
   return next;
 }
 

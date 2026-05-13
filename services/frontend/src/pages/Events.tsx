@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "../lib/api";
 import { Header } from "./Dashboard";
-import { cn, formatRelative, useNow } from "../lib/utils";
+import { bestYoutubeThumbnail, cn, formatRelative, useNow } from "../lib/utils";
 
 interface Event {
   id: number;
@@ -71,7 +71,16 @@ export function EventsPage() {
           const content = (
             <>
               {e.thumbnail_url ? (
-                <img src={e.thumbnail_url} className="w-full aspect-video object-cover rounded-[8px] flex-shrink-0 sm:w-32" alt="" />
+                <img
+                  src={bestYoutubeThumbnail(e.thumbnail_url)}
+                  onError={(event) => {
+                    if (e.thumbnail_url && event.currentTarget.src !== e.thumbnail_url) {
+                      event.currentTarget.src = e.thumbnail_url;
+                    }
+                  }}
+                  className="w-full aspect-video object-cover rounded-[8px] flex-shrink-0 sm:w-32"
+                  alt=""
+                />
               ) : (
                 <div className="w-full aspect-video rounded-[8px] bg-card flex-shrink-0 sm:w-32" />
               )}

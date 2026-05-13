@@ -568,11 +568,9 @@ def _thumbnail_candidate_urls(thumbnail_url: str) -> list[str]:
 
 
 def _finalize_telegram_thumbnail(img, output_path: str):
-    from PIL import Image
-
     working = img.convert("RGB")
     for max_dimension in (TELEGRAM_THUMB_MAX_DIMENSION, 280, 240, 200):
-        sized = _resize_max_dimension(working, max_dimension)
+        sized = _sharpen_thumbnail(_resize_max_dimension(working, max_dimension))
         for quality in (95, 92, 90, 88, 85, 82, 80, 75):
             sized.save(
                 output_path,
@@ -586,7 +584,7 @@ def _finalize_telegram_thumbnail(img, output_path: str):
             if saved_bytes <= TELEGRAM_THUMB_MAX_BYTES:
                 return sized, saved_bytes
 
-    fallback = _resize_max_dimension(working, 160)
+    fallback = _sharpen_thumbnail(_resize_max_dimension(working, 160))
     fallback.save(
         output_path,
         "JPEG",
@@ -596,6 +594,12 @@ def _finalize_telegram_thumbnail(img, output_path: str):
         subsampling=0,
     )
     return fallback, os.path.getsize(output_path)
+
+
+def _sharpen_thumbnail(img):
+    from PIL import ImageFilter
+
+    return img.filter(ImageFilter.UnsharpMask(radius=0.7, percent=120, threshold=2))
 
 
 def _resize_max_dimension(img, max_dimension: int):

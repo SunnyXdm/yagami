@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { apiGet, apiPost, apiStream } from "../lib/api";
-import { cn, formatBytes, formatRelative, useNow } from "../lib/utils";
+import { bestYoutubeThumbnail, cn, formatBytes, formatRelative, useNow } from "../lib/utils";
 import { Header } from "./Dashboard";
 
 interface Download {
@@ -216,7 +216,12 @@ export function DownloadsPage() {
                       <div className="aspect-video overflow-hidden rounded-[8px] border border-border bg-card">
                         {download.thumbnail_url ? (
                           <img
-                            src={download.thumbnail_url}
+                            src={bestYoutubeThumbnail(download.thumbnail_url)}
+                            onError={(event) => {
+                              if (download.thumbnail_url && event.currentTarget.src !== download.thumbnail_url) {
+                                event.currentTarget.src = download.thumbnail_url;
+                              }
+                            }}
                             className="h-full w-full object-cover transition duration-500 hover:scale-[1.02]"
                             alt=""
                           />

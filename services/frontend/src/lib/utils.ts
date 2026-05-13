@@ -12,6 +12,13 @@ export function formatBytes(n?: number | null): string {
   return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
 }
 
+export function bestYoutubeThumbnail(url?: string | null): string | undefined {
+  if (!url) return undefined;
+  const match = url.match(/(?:i\.ytimg\.com|img\.youtube\.com)\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//);
+  if (!match) return url;
+  return `https://i.ytimg.com/vi/${match[1]}/maxresdefault.jpg`;
+}
+
 export function useNow(intervalMs = 1_000): number {
   const [now, setNow] = useState(() => Date.now());
 
