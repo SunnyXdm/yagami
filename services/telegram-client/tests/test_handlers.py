@@ -6,7 +6,7 @@ import math
 import os
 import sys
 import tempfile
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -18,7 +18,6 @@ from telegram_client.handlers import (
     TELEGRAM_PARALLEL_UPLOAD_MIN_BYTES,
     TELEGRAM_UPLOAD_PART_SIZE_KB,
     _make_upload_progress_callback,
-    _create_parallel_upload_sender,
     _upload_file_to_telegram,
     handle_download_complete,
     handle_event,
@@ -401,7 +400,7 @@ class TestUploadProgressCallback:
 
 class TestParallelTelegramUpload:
     @pytest.mark.asyncio
-    async def test_parallel_upload_uses_multiple_senders_for_large_files(self):
+    async def test_parallel_upload_pipelines_large_files(self):
         class FakeInputFileBig:
             def __init__(self, file_id, parts, name):
                 self.id = file_id
@@ -417,17 +416,22 @@ class TestParallelTelegramUpload:
 
         class FakeSender:
             def __init__(self):
-                self.requests = []
-                self.disconnect = AsyncMock()
+                self.batches = []
 
-            async def send(self, request):
-                self.requests.append(request)
-                return True
+            def send(self, requests):
+                self.batches.append(requests)
+                loop = asyncio.get_running_loop()
+                futures = []
+                for _ in requests:
+                    future = loop.create_future()
+                    future.set_result(True)
+                    futures.append(future)
+                return futures
 
         file_size = 11 * 1024 * 1024
-        senders = [FakeSender() for _ in range(3)]
+        sender = FakeSender()
         tg = MagicMock()
-        tg.session = MagicMock(dc_id=4)
+        tg._sender = sender
         tg.upload_file = AsyncMock()
         progress_callback = AsyncMock()
 
@@ -471,10 +475,7 @@ class TestParallelTelegramUpload:
                     "telethon.tl.functions": functions_mod,
                     "telethon.tl.types": types_mod,
                 },
-            ), patch(
-                "telegram_client.handlers._create_parallel_upload_sender",
-                AsyncMock(side_effect=senders),
-            ) as create_sender:
+            ):
                 uploaded = await _upload_file_to_telegram(
                     tg,
                     temp_path,
@@ -484,88 +485,20 @@ class TestParallelTelegramUpload:
 
             assert uploaded.parts == math.ceil(file_size / (TELEGRAM_UPLOAD_PART_SIZE_KB * 1024))
             assert uploaded.name == os.path.basename(temp_path)
-            assert create_sender.await_count == 3
-            assert sum(len(sender.requests) for sender in senders) == uploaded.parts
+            assert sum(len(batch) for batch in sender.batches) == uploaded.parts
+            assert max(len(batch) for batch in sender.batches) == 3
             assert progress_callback.await_args_list[-1].args == (file_size, file_size)
             tg.upload_file.assert_not_called()
-            for sender in senders:
-                sender.disconnect.assert_awaited_once()
         finally:
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
 
     @pytest.mark.asyncio
-    async def test_create_parallel_upload_sender_uses_current_dc_auth_key(self):
-        class FakeMTProtoSender:
-            def __init__(self, auth_key, *, loggers):
-                self.auth_key = auth_key
-                self.loggers = loggers
-                self.connected_to = None
-                self.dc_id = None
-
-            async def connect(self, connection):
-                self.connected_to = connection
-
-        mtproto_mod = ModuleType("telethon.network.mtprotosender")
-        mtproto_mod.MTProtoSender = FakeMTProtoSender
-        network_mod = ModuleType("telethon.network")
-        network_mod.mtprotosender = mtproto_mod
-
-        auth_key = object()
-        connection = object()
-        tg = MagicMock()
-        tg.session = SimpleNamespace(dc_id=4, auth_key=auth_key)
-        tg._sender = None
-        tg._log = object()
-        tg._proxy = None
-        tg._local_addr = None
-        tg._connection = MagicMock(return_value=connection)
-        tg._get_dc = AsyncMock(return_value=SimpleNamespace(ip_address="149.154.167.50", port=443, id=4))
-        tg._create_exported_sender = AsyncMock()
-
-        with patch.dict(
-            sys.modules,
-            {
-                "telethon.network": network_mod,
-                "telethon.network.mtprotosender": mtproto_mod,
-            },
-        ):
-            sender = await _create_parallel_upload_sender(tg, 4)
-
-        assert isinstance(sender, FakeMTProtoSender)
-        assert sender.auth_key is auth_key
-        assert sender.connected_to is connection
-        assert sender.dc_id == 4
-        tg._create_exported_sender.assert_not_awaited()
-        tg._connection.assert_called_once_with(
-            "149.154.167.50",
-            443,
-            4,
-            loggers=tg._log,
-            proxy=None,
-            local_addr=None,
-        )
-
-    @pytest.mark.asyncio
-    async def test_create_parallel_upload_sender_uses_exported_auth_for_other_dc(self):
-        exported_sender = object()
-        tg = MagicMock()
-        tg.session = SimpleNamespace(dc_id=4, auth_key=object())
-        tg._sender = None
-        tg._create_exported_sender = AsyncMock(return_value=exported_sender)
-
-        sender = await _create_parallel_upload_sender(tg, 5)
-
-        assert sender is exported_sender
-        tg._create_exported_sender.assert_awaited_once_with(5)
-
-    @pytest.mark.asyncio
     async def test_parallel_upload_falls_back_to_sequential_when_parallel_path_fails(self):
         file_size = 11 * 1024 * 1024
         tg = MagicMock()
-        tg.session = MagicMock(dc_id=4)
+        tg._sender = None
         tg.upload_file = AsyncMock(return_value="sequential-upload")
-        tg._create_exported_sender = AsyncMock(side_effect=RuntimeError("boom"))
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
             f.write(b"x" * file_size)

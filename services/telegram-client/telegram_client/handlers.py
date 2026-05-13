@@ -369,15 +369,14 @@ async def _upload_file_parallel(
     if part_size <= 0 or part_size % 1024 != 0:
         raise ValueError("invalid Telegram upload part size")
 
-    session = getattr(tg, "session", None)
-    dc_id = getattr(session, "dc_id", 0) or getattr(getattr(tg, "_sender", None), "dc_id", 0)
-    if not dc_id or not hasattr(tg, "_create_exported_sender"):
-        raise RuntimeError("parallel upload requires an active Telegram DC sender")
+    sender = getattr(tg, "_sender", None)
+    if sender is None or not callable(getattr(sender, "send", None)):
+        raise RuntimeError("parallel upload requires an active Telegram sender")
 
     part_count = (file_size + part_size - 1) // part_size
-    worker_count = min(TELEGRAM_PARALLEL_UPLOAD_CONNECTIONS, part_count)
-    if worker_count < 2:
-        raise RuntimeError("parallel upload requires at least two Telegram workers")
+    in_flight = min(TELEGRAM_PARALLEL_UPLOAD_CONNECTIONS, part_count)
+    if in_flight < 2:
+        raise RuntimeError("parallel upload requires at least two in-flight Telegram requests")
 
     file_id = helpers.generate_random_long()
     file_name = os.path.basename(file_path) or str(file_id)
@@ -385,120 +384,58 @@ async def _upload_file_parallel(
         file_name += ".bin"
 
     log.info(
-        "Parallel Telegram upload starting: %d bytes in %d chunks via %d senders",
+        "Pipelined Telegram upload starting: %d bytes in %d chunks with %d in-flight requests",
         file_size,
         part_count,
-        worker_count,
+        in_flight,
     )
 
-    queue: asyncio.Queue[tuple[int, bytes] | None] = asyncio.Queue(maxsize=worker_count * 2)
-    stop_event = asyncio.Event()
-    progress_lock = asyncio.Lock()
     uploaded_bytes = 0
-    first_error: Exception | None = None
-    senders = []
-    worker_tasks: list[asyncio.Task[None]] = []
 
-    async def worker(sender) -> None:
-        nonlocal uploaded_bytes, first_error
+    async def upload_batch(batch: list[tuple[int, bytes]]) -> None:
+        nonlocal uploaded_bytes
 
-        while True:
-            item = await queue.get()
-            try:
-                if item is None:
-                    return
+        requests = [
+            functions.upload.SaveBigFilePartRequest(file_id, part_index, part_count, part)
+            for part_index, part in batch
+        ]
+        futures = sender.send(requests)
+        if not isinstance(futures, list):
+            futures = [futures]
+        results = await asyncio.gather(*futures)
+        if len(results) != len(batch):
+            raise RuntimeError("Telegram upload returned an unexpected number of part results")
 
-                if stop_event.is_set():
-                    continue
+        for (part_index, part), result in zip(batch, results):
+            if not result:
+                raise RuntimeError(f"Failed to upload Telegram file part {part_index}.")
 
-                part_index, part = item
-                request = functions.upload.SaveBigFilePartRequest(file_id, part_index, part_count, part)
-                result = await sender.send(request)
-                if not result:
-                    raise RuntimeError(f"Failed to upload Telegram file part {part_index}.")
+            uploaded_bytes += len(part)
+            if progress_callback:
+                await helpers._maybe_await(progress_callback(uploaded_bytes, file_size))
 
-                if progress_callback:
-                    async with progress_lock:
-                        uploaded_bytes += len(part)
-                        completed_bytes = uploaded_bytes
-                    await helpers._maybe_await(progress_callback(completed_bytes, file_size))
-            except Exception as exc:
-                if first_error is None:
-                    first_error = exc
-                stop_event.set()
-            finally:
-                queue.task_done()
+    with open(file_path, "rb") as handle:
+        batch: list[tuple[int, bytes]] = []
+        for part_index in range(part_count):
+            part = handle.read(part_size)
+            if len(part) != part_size and part_index < part_count - 1:
+                raise ValueError(f"read less than {part_size} bytes before reaching the end of {file_path}")
 
-    try:
-        for _ in range(worker_count):
-            senders.append(await _create_parallel_upload_sender(tg, dc_id))
+            batch.append((part_index, part))
+            if len(batch) >= in_flight:
+                await upload_batch(batch)
+                batch = []
 
-        worker_tasks = [asyncio.create_task(worker(sender)) for sender in senders]
+        if batch:
+            await upload_batch(batch)
 
-        with open(file_path, "rb") as handle:
-            for part_index in range(part_count):
-                if stop_event.is_set():
-                    break
-
-                part = handle.read(part_size)
-                if len(part) != part_size and part_index < part_count - 1:
-                    raise ValueError(
-                        f"read less than {part_size} bytes before reaching the end of {file_path}"
-                    )
-
-                await queue.put((part_index, part))
-
-        for _ in worker_tasks:
-            await queue.put(None)
-
-        await queue.join()
-        if worker_tasks:
-            await asyncio.gather(*worker_tasks, return_exceptions=True)
-
-        if first_error is not None:
-            raise first_error
-
-        log.info(
-            "Parallel Telegram upload finished: %d bytes across %d chunks via %d senders",
-            file_size,
-            part_count,
-            worker_count,
-        )
-        return types.InputFileBig(file_id, part_count, file_name)
-    finally:
-        for sender in senders:
-            try:
-                await sender.disconnect()
-            except Exception:
-                log.debug("Failed to disconnect exported Telegram sender cleanly", exc_info=True)
-
-
-async def _create_parallel_upload_sender(tg: TelegramClient, dc_id: int):
-    session = getattr(tg, "session", None)
-    current_dc_id = getattr(session, "dc_id", 0) or getattr(getattr(tg, "_sender", None), "dc_id", 0)
-    if dc_id != current_dc_id:
-        return await tg._create_exported_sender(dc_id)
-
-    from telethon.network.mtprotosender import MTProtoSender
-
-    auth_key = getattr(session, "auth_key", None) or getattr(getattr(tg, "_sender", None), "auth_key", None)
-    if auth_key is None:
-        raise RuntimeError("parallel upload requires an active Telegram auth key")
-
-    dc = await tg._get_dc(dc_id)
-    sender = MTProtoSender(auth_key, loggers=tg._log)
-    await sender.connect(
-        tg._connection(
-            dc.ip_address,
-            dc.port,
-            dc.id,
-            loggers=tg._log,
-            proxy=getattr(tg, "_proxy", None),
-            local_addr=getattr(tg, "_local_addr", None),
-        )
+    log.info(
+        "Pipelined Telegram upload finished: %d bytes across %d chunks with %d in-flight requests",
+        file_size,
+        part_count,
+        in_flight,
     )
-    sender.dc_id = dc_id
-    return sender
+    return types.InputFileBig(file_id, part_count, file_name)
 
 
 def _display_title(data: dict) -> str:
