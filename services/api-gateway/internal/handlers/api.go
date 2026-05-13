@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"time"
@@ -109,13 +110,47 @@ func (h *Handler) RetryDownload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "missing videoId")
 		return
 	}
-	url := "https://www.youtube.com/watch?v=" + videoID
-	payload := []byte(`{"video_id":"` + videoID + `","title":"` + videoID + `","url":"` + url + `"}`)
+	download, err := h.Store.GetDownloadByVideoID(r.Context(), videoID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "download not found")
+		return
+	}
+
+	payload, err := retryDownloadPayload(videoID, download)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if err := h.NC.Publish("download.request", payload); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"queued": true, "video_id": videoID})
+}
+
+func retryDownloadPayload(videoID string, download *store.Download) ([]byte, error) {
+	payloadMap := map[string]any{
+		"video_id": videoID,
+		"title":    stringValue(download.Title, videoID),
+		"url":      stringValue(download.URL, "https://www.youtube.com/watch?v="+videoID),
+	}
+	if download.RequesterChatID != nil {
+		payloadMap["requester_chat_id"] = *download.RequesterChatID
+	}
+	if download.ThumbnailURL != nil {
+		payloadMap["thumbnail"] = *download.ThumbnailURL
+	}
+	if download.Channel != nil {
+		payloadMap["channel_title"] = *download.Channel
+	}
+	return json.Marshal(payloadMap)
+}
+
+func stringValue(value *string, fallback string) string {
+	if value != nil && *value != "" {
+		return *value
+	}
+	return fallback
 }
 
 func (h *Handler) Heartbeats(w http.ResponseWriter, r *http.Request) {

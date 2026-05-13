@@ -431,7 +431,7 @@ async def _upload_file_parallel(
 
     try:
         for _ in range(worker_count):
-            senders.append(await tg._create_exported_sender(dc_id))
+            senders.append(await _create_parallel_upload_sender(tg, dc_id))
 
         worker_tasks = [asyncio.create_task(worker(sender)) for sender in senders]
 
@@ -471,6 +471,34 @@ async def _upload_file_parallel(
                 await sender.disconnect()
             except Exception:
                 log.debug("Failed to disconnect exported Telegram sender cleanly", exc_info=True)
+
+
+async def _create_parallel_upload_sender(tg: TelegramClient, dc_id: int):
+    session = getattr(tg, "session", None)
+    current_dc_id = getattr(session, "dc_id", 0) or getattr(getattr(tg, "_sender", None), "dc_id", 0)
+    if dc_id != current_dc_id:
+        return await tg._create_exported_sender(dc_id)
+
+    from telethon.network.mtprotosender import MTProtoSender
+
+    auth_key = getattr(session, "auth_key", None) or getattr(getattr(tg, "_sender", None), "auth_key", None)
+    if auth_key is None:
+        raise RuntimeError("parallel upload requires an active Telegram auth key")
+
+    dc = await tg._get_dc(dc_id)
+    sender = MTProtoSender(auth_key, loggers=tg._log)
+    await sender.connect(
+        tg._connection(
+            dc.ip_address,
+            dc.port,
+            dc.id,
+            loggers=tg._log,
+            proxy=getattr(tg, "_proxy", None),
+            local_addr=getattr(tg, "_local_addr", None),
+        )
+    )
+    sender.dc_id = dc_id
+    return sender
 
 
 def _display_title(data: dict) -> str:

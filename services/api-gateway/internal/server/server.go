@@ -70,6 +70,16 @@ type statusWriter struct {
 }
 
 func (sw *statusWriter) WriteHeader(c int) { sw.status = c; sw.ResponseWriter.WriteHeader(c) }
+
+func (sw *statusWriter) Flush() {
+	if sw.status == 0 {
+		sw.status = 200
+	}
+	if f, ok := sw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func (sw *statusWriter) Write(b []byte) (int, error) {
 	if sw.status == 0 {
 		sw.status = 200
