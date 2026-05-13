@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Pause, Play, Search } from "lucide-react";
 import { apiGet, apiStream } from "../lib/api";
-import { cn, formatRelative } from "../lib/utils";
+import { cn, formatRelative, useNow } from "../lib/utils";
 import { Header } from "./Dashboard";
 
 interface LogEntry {
@@ -28,6 +28,7 @@ export function LogsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const nextLiveId = useRef(-1);
+  const now = useNow();
 
   const allServices = useQuery({
     queryKey: ["log-services"],
@@ -194,7 +195,7 @@ export function LogsPage() {
           {filtered.length === 0 ? (
             <div className="p-6 text-center text-muted">No logs match these filters yet.</div>
           ) : (
-            filtered.map((entry, index) => <LogRow key={entry.id ?? index} e={entry} />)
+            filtered.map((entry) => <LogRow key={logIdentity(entry)} e={entry} now={now} />)
           )}
           {filtered.length > 0 && (
             <div className="border-t border-border px-4 py-3 text-center text-[11px] text-muted">
@@ -237,7 +238,7 @@ function appendOlder(prev: LogEntry[], older: LogEntry[]) {
   return next;
 }
 
-function LogRow({ e }: { e: LogEntry }) {
+function LogRow({ e, now }: { e: LogEntry; now: number }) {
   const colors: Record<string, string> = {
     info: "text-text",
     warn: "text-accentYellow",
@@ -254,7 +255,7 @@ function LogRow({ e }: { e: LogEntry }) {
 
   return (
     <div className="grid min-w-[760px] grid-cols-[110px_140px_72px_1fr] gap-4 border-b border-border px-4 py-2.5 hover:bg-card/70">
-      <span className="tabular-nums text-muted">{formatRelative(e.ts)}</span>
+      <span className="tabular-nums text-muted">{formatRelative(e.ts, now)}</span>
       <span className={serviceColors[e.service] || "text-muted"}>{e.service}</span>
       <span className={cn("uppercase tracking-[0.12em]", colors[e.level] || "")}>{e.level}</span>
       <span className={cn("whitespace-pre-wrap break-words", colors[e.level] || "text-text")}>{e.message}</span>

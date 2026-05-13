@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "../lib/api";
 import { Header } from "./Dashboard";
-import { cn, formatRelative } from "../lib/utils";
+import { cn, formatRelative, useNow } from "../lib/utils";
 
 interface Event {
   id: number;
@@ -19,6 +19,7 @@ interface Event {
 export function EventsPage() {
   const [type, setType] = useState("");
   const [q, setQ] = useState("");
+  const now = useNow();
   const { data } = useQuery({
     queryKey: ["events", type, q],
     queryFn: () => {
@@ -78,7 +79,7 @@ export function EventsPage() {
                 <div className="mb-2 flex items-center gap-2">
                   <TypeBadge t={e.event_type} />
                   <span className="text-[12px] text-muted">
-                    {formatRelative(e.created_at)}
+                    {formatRelative(e.created_at, now)}
                   </span>
                 </div>
                 <div className="line-clamp-2 text-[16px] font-semibold leading-[1.35] text-text transition group-hover:text-white">

@@ -15,6 +15,7 @@ from telegram_client.config import Config
 from telegram_client.handlers import (
     MAX_UPLOAD_BYTES,
     TELEGRAM_THUMB_MAX_BYTES,
+    TELEGRAM_PARALLEL_UPLOAD_MIN_BYTES,
     TELEGRAM_UPLOAD_PART_SIZE_KB,
     _make_upload_progress_callback,
     _upload_file_to_telegram,
@@ -338,6 +339,9 @@ class TestSplitVideoConstants:
 
     def test_thumbnail_budget_keeps_previews_crisp(self):
         assert TELEGRAM_THUMB_MAX_BYTES >= 180_000
+
+    def test_medium_videos_use_parallel_upload_path(self):
+        assert TELEGRAM_PARALLEL_UPLOAD_MIN_BYTES <= 52 * 1024 * 1024
 
     def test_part_calculation(self):
         """Verify the number of parts for a given file size."""

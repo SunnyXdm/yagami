@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { apiGet, apiPost, apiStream } from "../lib/api";
-import { cn, formatBytes, formatRelative } from "../lib/utils";
+import { cn, formatBytes, formatRelative, useNow } from "../lib/utils";
 import { Header } from "./Dashboard";
 
 interface Download {
@@ -39,6 +39,7 @@ interface LiveUploadState {
 export function DownloadsPage() {
   const qc = useQueryClient();
   const [liveUploads, setLiveUploads] = useState<Record<string, LiveUploadState>>({});
+  const now = useNow();
   const { data } = useQuery({
     queryKey: ["downloads"],
     queryFn: () => apiGet<Download[]>("downloads?limit=200"),
@@ -95,6 +96,11 @@ export function DownloadsPage() {
         if (!payload?.video_id) return;
         merge(payload.video_id, {
           status: payload.status || "uploaded",
+          uploaded_bytes: payload.uploaded_bytes,
+          total_bytes: payload.total_bytes,
+          progress_percent: payload.progress_percent,
+          speed_text: payload.speed_text,
+          eta_text: payload.eta_text,
           error: payload.error || null,
         });
       } catch {}
@@ -198,119 +204,114 @@ export function DownloadsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {rows.map(({ download, live, status, progress }) => (
-              <article
-                key={download.video_id}
-                className="group overflow-hidden rounded-[8px] border border-border bg-panel text-text"
-                style={{ contentVisibility: "auto", containIntrinsicSize: "170px" }}
-              >
-                <div className="grid gap-4 p-3 xl:grid-cols-[160px_minmax(0,1fr)_170px] xl:items-start xl:p-4">
-                  <div className="relative aspect-video overflow-hidden rounded-[8px] border border-border bg-card">
-                    {download.thumbnail_url ? (
-                      <img
-                        src={download.thumbnail_url}
-                        className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]"
-                        alt=""
-                      />
-                    ) : (
-                      <div className="h-full w-full bg-[radial-gradient(circle_at_top,rgba(255,255,255,.08),transparent_60%)]" />
-                    )}
-                    <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-2 p-3">
-                      <SourceBadge requesterChatId={download.requester_chat_id} />
-                      <StatusBadge s={status} />
-                    </div>
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-bg/85 via-bg/30 to-transparent p-3 text-xs text-text/90">
-                      {typeof progress === "number" ? `${progress}% in motion` : "Awaiting telemetry"}
-                    </div>
-                  </div>
+            {rows.map(({ download, live, status, progress }) => {
+              const active = status === "uploading" || status === "downloading";
+              const terminal = status === "uploaded" || status === "completed" || status === "failed" || status === "upload_failed";
+              const telemetry = live?.progress_text || (active ? (status === "uploading" ? "Uploading to Telegram" : "Downloading with yt-dlp") : null);
 
-                  <div className="min-w-0">
-                    {download.url ? (
-                      <a
-                        href={download.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="line-clamp-2 text-[17px] font-semibold leading-[1.3] text-text hover:text-white"
-                      >
-                        {download.title ?? <span className="text-muted">Untitled</span>}
-                      </a>
-                    ) : (
-                      <div className="line-clamp-2 text-[17px] font-semibold leading-[1.3] text-text">
-                        {download.title ?? <span className="text-muted">Untitled</span>}
-                      </div>
-                    )}
-
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <MetaPill>{download.channel || "unknown channel"}</MetaPill>
-                      <MetaPill tone="subtle">{download.video_id}</MetaPill>
-                      {download.attempts > 1 && <MetaPill tone="warning">retry #{download.attempts}</MetaPill>}
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <DeliveryBadge status={status} requesterChatId={download.requester_chat_id} />
-                      {typeof progress === "number" ? (
-                        <span className="text-xs tabular-nums text-muted">{progress}%</span>
-                      ) : status === "uploading" || status === "downloading" ? (
-                        <span className="text-xs text-muted">live progress pending...</span>
-                      ) : null}
-                    </div>
-
-                    {(live?.status === "uploading" ||
-                      live?.status === "downloading" ||
-                      status === "uploading" ||
-                      status === "downloading") && (
-                      <div className="mt-4 rounded-[10px] border border-border bg-card p-4">
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-body">
-                          <span>{live?.progress_text || (status === "uploading" ? "Uploading to Telegram..." : "Downloading with yt-dlp...")}</span>
-                          <span className="tabular-nums">{typeof progress === "number" ? `${progress}%` : "syncing"}</span>
-                        </div>
-                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-panel">
-                          <div
-                            className={cn(
-                              "h-full rounded-full transition-[width] duration-300",
-                              status === "uploading" ? "bg-accentBlue" : "bg-white",
-                              typeof progress !== "number" && "w-1/3 animate-pulse",
-                            )}
-                            style={typeof progress === "number" ? { width: `${progress}%` } : undefined}
+              return (
+                <article key={download.video_id} className="rounded-[8px] border border-border bg-panel text-text">
+                  <div className="grid gap-3 p-3 lg:grid-cols-[128px_minmax(0,1fr)_auto] lg:items-start">
+                    <div className="space-y-2">
+                      <div className="aspect-video overflow-hidden rounded-[8px] border border-border bg-card">
+                        {download.thumbnail_url ? (
+                          <img
+                            src={download.thumbnail_url}
+                            className="h-full w-full object-cover transition duration-500 hover:scale-[1.02]"
+                            alt=""
                           />
-                        </div>
-                        {(live?.speed_text || live?.eta_text || live?.part) && (
-                          <div className="mt-2 flex flex-wrap gap-3 text-[12px] text-muted">
-                            {live?.speed_text && <span>Speed {live.speed_text}</span>}
-                            {live?.eta_text && <span>ETA {live.eta_text}</span>}
-                            {live?.part && live.total_parts && live.total_parts > 1 && (
-                              <span>Part {live.part}/{live.total_parts}</span>
-                            )}
-                          </div>
+                        ) : (
+                          <div className="h-full w-full bg-card" />
                         )}
                       </div>
-                    )}
-
-                    {(live?.error || download.error) && (
-                      <div className="mt-3 rounded-[10px] border border-err/30 bg-err/10 px-3 py-3 text-[12px] leading-relaxed text-err">
-                        {live?.error || download.error}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-start justify-between gap-4 xl:flex-col xl:items-end">
-                    <div className="grid gap-2 text-xs text-muted">
-                      <InfoStack label="Size" value={formatBytes(download.file_size || 0)} />
-                      <InfoStack label="Updated" value={formatRelative(download.completed_at || download.updated_at)} />
-                      <InfoStack label="Route" value={download.requester_chat_id ? "Admin DM" : "Likes chat"} />
+                      <SourceBadge requesterChatId={download.requester_chat_id} />
                     </div>
-                    <button
-                      onClick={() => retry.mutate(download.video_id)}
-                      className="button-secondary-dark gap-2"
-                      title="Retry"
-                    >
-                      <RefreshCw size={14} />
-                      Retry
-                    </button>
+
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-start gap-2">
+                        <StatusBadge s={status} />
+                        <DeliveryBadge status={status} requesterChatId={download.requester_chat_id} />
+                      </div>
+
+                      {download.url ? (
+                        <a
+                          href={download.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 block line-clamp-2 text-[16px] font-semibold leading-[1.3] text-text hover:text-white"
+                        >
+                          {download.title ?? <span className="text-muted">Untitled</span>}
+                        </a>
+                      ) : (
+                        <div className="mt-2 line-clamp-2 text-[16px] font-semibold leading-[1.3] text-text">
+                          {download.title ?? <span className="text-muted">Untitled</span>}
+                        </div>
+                      )}
+
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <MetaPill>{download.channel || "unknown channel"}</MetaPill>
+                        <MetaPill tone="subtle">{download.video_id}</MetaPill>
+                        {download.attempts > 1 && <MetaPill tone="warning">retry #{download.attempts}</MetaPill>}
+                      </div>
+
+                      {active && (
+                        <div className="mt-3 rounded-[8px] border border-border bg-card px-3 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-body">
+                            <span>{telemetry}</span>
+                            <span className="tabular-nums">{typeof progress === "number" ? `${progress}%` : "syncing"}</span>
+                          </div>
+                          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel">
+                            <div
+                              className={cn(
+                                "h-full rounded-full transition-[width] duration-300",
+                                status === "uploading" ? "bg-accentBlue" : "bg-white",
+                                typeof progress !== "number" && "w-1/3 animate-pulse",
+                              )}
+                              style={typeof progress === "number" ? { width: `${progress}%` } : undefined}
+                            />
+                          </div>
+                          {(live?.speed_text || live?.eta_text || live?.part) && (
+                            <div className="mt-2 flex flex-wrap gap-3 text-[12px] text-muted">
+                              {live?.speed_text && <span>Speed {live.speed_text}</span>}
+                              {live?.eta_text && <span>ETA {live.eta_text}</span>}
+                              {live?.part && live.total_parts && live.total_parts > 1 && (
+                                <span>Part {live.part}/{live.total_parts}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {!active && terminal && live?.speed_text && (
+                        <div className="mt-3 text-[12px] text-muted">Last upload speed {live.speed_text}</div>
+                      )}
+
+                      {(live?.error || download.error) && (
+                        <div className="mt-3 rounded-[8px] border border-err/30 bg-err/10 px-3 py-3 text-[12px] leading-relaxed text-err">
+                          {live?.error || download.error}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-start justify-between gap-2 lg:min-w-[168px] lg:flex-col lg:items-end">
+                      <div className="grid grid-cols-3 gap-2 text-xs text-muted lg:w-full lg:grid-cols-1">
+                        <InfoStack label="Size" value={formatBytes(download.file_size || 0)} />
+                        <InfoStack label="Updated" value={formatRelative(download.completed_at || download.updated_at, now)} />
+                        <InfoStack label="Route" value={download.requester_chat_id ? "Admin DM" : "Likes chat"} />
+                      </div>
+                      <button
+                        onClick={() => retry.mutate(download.video_id)}
+                        className="button-secondary-dark h-9 gap-2"
+                        title="Retry"
+                      >
+                        <RefreshCw size={14} />
+                        Retry
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              );
+            })}
           </div>
         )}
       </div>

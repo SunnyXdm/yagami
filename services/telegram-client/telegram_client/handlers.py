@@ -56,7 +56,7 @@ TELEGRAM_THUMB_MAX_BYTES = 190_000
 TELEGRAM_UPLOAD_PART_SIZE_KB = 512
 TELEGRAM_BIG_FILE_THRESHOLD_BYTES = 10 * 1024 * 1024
 TELEGRAM_PARALLEL_UPLOAD_CONNECTIONS = 8
-TELEGRAM_PARALLEL_UPLOAD_MIN_BYTES = 64 * 1024 * 1024
+TELEGRAM_PARALLEL_UPLOAD_MIN_BYTES = TELEGRAM_BIG_FILE_THRESHOLD_BYTES + 1
 YOUTUBE_THUMB_RE = re.compile(r"(?:i\.ytimg\.com|img\.youtube\.com)/vi(?:_webp)?/([a-zA-Z0-9_-]{11})/")
 
 
@@ -162,6 +162,7 @@ async def handle_download_complete(
     total_upload_parts = 1
     last_message_id: int | None = None
     upload_started_at = time.monotonic()
+    uploaded_total_bytes = file_size
     try:
         if file_size <= MAX_UPLOAD_BYTES:
             # Single file upload
@@ -194,6 +195,7 @@ async def handle_download_complete(
             total = len(parts)
             total_upload_parts = total
             total_bytes = sum(os.path.getsize(part_path) for part_path in parts)
+            uploaded_total_bytes = total_bytes
             bytes_before_part = 0
             log.info("File too large (%.1f MB), split into %d parts", file_size_mb, total)
 
@@ -239,6 +241,7 @@ async def handle_download_complete(
                 telegram_chat_id=int(target_chat),
                 telegram_msg_id=last_message_id if total_upload_parts == 1 else None,
             )
+        elapsed_seconds = max(time.monotonic() - upload_started_at, 0.001)
         await _publish_download_event(
             nc,
             "download.uploaded",
@@ -248,6 +251,11 @@ async def handle_download_complete(
                 "telegram_chat_id": int(target_chat),
                 "telegram_msg_id": last_message_id if total_upload_parts == 1 else None,
                 "total_parts": total_upload_parts,
+                "uploaded_bytes": uploaded_total_bytes,
+                "total_bytes": uploaded_total_bytes,
+                "progress_percent": 100,
+                "speed_text": _format_rate(uploaded_total_bytes / elapsed_seconds),
+                "elapsed_text": _format_elapsed(elapsed_seconds, uploaded_total_bytes),
             },
         )
     except Exception as exc:
