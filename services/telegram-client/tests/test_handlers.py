@@ -1,5 +1,6 @@
 """Tests for event handlers — uses mocks for Telegram and filesystem."""
 
+import asyncio
 import json
 import math
 import os
@@ -13,6 +14,7 @@ from telegram_client.handlers import (
     MAX_UPLOAD_BYTES,
     TELEGRAM_THUMB_MAX_BYTES,
     TELEGRAM_UPLOAD_PART_SIZE_KB,
+    _make_upload_progress_callback,
     handle_download_complete,
     handle_event,
     prepare_thumbnail,
@@ -339,6 +341,54 @@ class TestSplitVideoConstants:
         assert math.ceil(4_000_000_000 / MAX_UPLOAD_BYTES) == 3
         assert math.ceil(2_000_000_000 / MAX_UPLOAD_BYTES) == 2
         assert math.ceil(1_900_000_000 / MAX_UPLOAD_BYTES) == 1
+
+
+class TestUploadProgressCallback:
+    @pytest.mark.asyncio
+    async def test_publishes_progress_payload_and_logs(self):
+        mock_publish = AsyncMock()
+        nc = object()
+        total_bytes = 64 * 1024 * 1024
+        uploaded_bytes = 32 * 1024 * 1024
+
+        with patch("telegram_client.handlers._publish_download_event", mock_publish), patch(
+            "telegram_client.handlers.log"
+        ) as mock_log, patch("telegram_client.handlers.time.monotonic", return_value=100.0):
+            callback = _make_upload_progress_callback(
+                "vid-progress",
+                nc,
+                started_at=90.0,
+                bytes_before_part=0,
+                total_bytes=total_bytes,
+                part=1,
+                total_parts=1,
+            )
+
+            assert callback is not None
+            callback(uploaded_bytes, total_bytes)
+            await asyncio.sleep(0)
+
+        mock_publish.assert_awaited_once()
+        args = mock_publish.await_args.args
+        assert args[0] is nc
+        assert args[1] == "download.upload_progress"
+
+        payload = args[2]
+        assert payload["video_id"] == "vid-progress"
+        assert payload["status"] == "uploading"
+        assert payload["uploaded_bytes"] == uploaded_bytes
+        assert payload["total_bytes"] == total_bytes
+        assert payload["part"] == 1
+        assert payload["total_parts"] == 1
+        assert payload["progress_text"] == "Uploading to Telegram 50% at 3.2 MB/s"
+        assert payload["speed_text"] == "3.2 MB/s"
+        assert payload["eta_text"] == "10s"
+
+        mock_log.info.assert_called_once_with(
+            "%s%s",
+            payload["progress_text"],
+            " ETA 10s",
+        )
 
 
 # ── _safe_remove ────────────────────────────────────────────
