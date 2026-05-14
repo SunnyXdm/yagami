@@ -12,6 +12,7 @@ from telegram_client.config import Config
 from telegram_client.client import (
     QueuePage,
     _page_number,
+    _parse_admin_command,
     _progress_percent,
     _render_admin_progress_text,
     _render_download_queue_page,
@@ -176,6 +177,32 @@ class TestAdminProgressFormatting:
         assert _status_from_progress_subject("download.complete", {"success": True}) == "completed"
         assert _status_from_progress_subject("download.complete", {"success": False}) == "failed"
         assert _status_from_progress_subject("download.uploaded", {}) == "uploaded"
+
+
+class TestAdminCommandParsing:
+    def test_alias_and_mention_normalize(self):
+        parsed = _parse_admin_command("/commands@YagamiBot", "YagamiBot")
+
+        assert parsed is not None
+        assert parsed.name == "cmds"
+        assert parsed.args == ()
+
+    def test_start_keeps_payload(self):
+        parsed = _parse_admin_command("/start onboarding-token", "YagamiBot")
+
+        assert parsed is not None
+        assert parsed.name == "start"
+        assert parsed.args == ("onboarding-token",)
+
+    def test_downloads_page_argument_is_preserved(self):
+        parsed = _parse_admin_command("/downloads 2", "YagamiBot")
+
+        assert parsed is not None
+        assert parsed.name == "downloads"
+        assert parsed.args == ("2",)
+
+    def test_foreign_bot_mention_is_ignored(self):
+        assert _parse_admin_command("/status@OtherBot", "YagamiBot") is None
 
 
 class TestQueueRendering:

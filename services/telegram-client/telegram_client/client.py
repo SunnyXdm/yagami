@@ -84,6 +84,12 @@ class QueuePage:
     active_count: int
 
 
+@dataclass(frozen=True)
+class ParsedAdminCommand:
+    name: str
+    args: tuple[str, ...]
+
+
 _pending_downloads: dict[str, PendingDownloadRequest] = {}
 _admin_progress_messages: dict[str, AdminProgressMessage] = {}
 
@@ -304,26 +310,7 @@ def _command_buttons(config: Config) -> list[list[Button]]:
 def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
     config: Config = state["config"]
     admin = config.admin_user_id
-
-    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/start(?:@\w+)?$"))
-    async def _start(event):
-        await event.reply(_command_list_text(config), buttons=_command_buttons(config) if config.use_bot else None)
-
-    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/(?:cmds|help)(?:@\w+)?$"))
-    async def _cmds(event):
-        await event.reply(_command_list_text(config), buttons=_command_buttons(config) if config.use_bot else None)
-
-    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/settings(?:@\w+)?$"))
-    async def _settings(event):
-        url = _web_url(config, "settings")
-        buttons = [[Button.url("Open settings", url)]] if config.use_bot else None
-        await event.reply(f"Settings: {url}", buttons=buttons)
-
-    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/downloads(?:@\w+)?(?:\s+(\d+))?$"))
-    async def _downloads(event):
-        page = _page_number(event.pattern_match.group(1) if event.pattern_match else None)
-        text, buttons = await _download_queue_response(config, page)
-        await event.reply(text, buttons=buttons if config.use_bot else None)
+    bot_username = getattr(state.get("me"), "username", None)
 
     @tg.on(events.CallbackQuery(pattern=rb"^queue:"))
     async def _on_queue_page(event):
@@ -341,64 +328,26 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
         await event.edit(text, buttons=buttons)
         await event.answer(f"Page {page}")
 
-    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/dl(?:@\w+)?\s+([A-Za-z0-9_-]{11})\s+(\S+)$"))
-    async def _text_quality_selected(event):
-        video_id = event.pattern_match.group(1)
-        quality_key = event.pattern_match.group(2).lower()
-        pending = _pending_downloads.get(video_id)
-        if quality_key == "cancel":
-            _pending_downloads.pop(video_id, None)
-            await event.reply(f"Cancelled `{video_id}`.")
-            return
-
-        if pending is None or _pending_download_expired(pending):
-            _pending_downloads.pop(video_id, None)
-            await event.reply("That quality picker expired. Send the link again.")
-            return
-
-        try:
-            label = await _queue_pending_download(nc, pending, admin, quality_key)
-        except ValueError:
-            await event.reply("Unknown quality. Use one of these commands:\n" + _text_quality_options(video_id, pending.qualities))
-            return
-        status_message = await event.reply(
-            _render_admin_progress_text(pending.video_id, pending.title, label, "queued", {}),
-            buttons=_admin_progress_buttons(config) if config.use_bot else None,
-        )
-        _remember_admin_progress_message(
-            pending.video_id,
-            admin,
-            getattr(status_message, "id", 0),
-            pending.title,
-            label,
-        )
-
-    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/ping(?:@\w+)?$"))
-    async def _ping(event):
-        await event.reply(f"pong — uptime {_fmt_uptime(time.time() - START_TS)}")
-
-    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/status(?:@\w+)?$"))
-    async def _status(event):
-        # Reload config so we report fresh state.
-        cfg = await Config.load()
-        lines = [
-            "**Yagami status**",
-            f"• Mode: `{'bot' if cfg.use_bot else 'user-account'}`",
-            f"• Telegram: connected as `@{getattr(state['me'], 'username', '?')}`",
-            f"• Uptime: `{_fmt_uptime(time.time() - START_TS)}`",
-            f"• Events handled: `{state['events_handled']}`",
-            f"• Likes channel: {'✓' if cfg.chat_id_likes else '✗ not set'}",
-            f"• History channel: {'✓' if cfg.chat_id_watch_history else '✗ not set'}",
-            f"• Subscriptions channel: {'✓' if cfg.chat_id_subscriptions else '✗ not set'}",
-        ]
-        await event.reply("\n".join(lines))
-
-    # YouTube-link auto-download (kept).
     @tg.on(events.NewMessage(from_users=[admin]))
     async def _on_admin_msg(event):
-        text = event.message.text or ""
+        text = (getattr(event, "raw_text", None) or event.message.text or "").strip()
+        if not text:
+            return
+
+        parsed = _parse_admin_command(text, bot_username)
+        if parsed is not None:
+            await _handle_admin_command(event, parsed, config, admin, nc, state)
+            return
+
         if text.startswith("/"):
-            return  # already handled by command handlers above
+            await _safe_admin_reply(
+                event,
+                "Unknown command. Use /cmds to see the supported admin controls.",
+                buttons=_command_buttons(config) if config.use_bot else None,
+                plain_text="Unknown command. Use /cmds to see the supported admin controls.",
+            )
+            return
+
         m = YOUTUBE_RE.search(text)
         if not m:
             return
@@ -420,9 +369,10 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
                     created_at=time.time(),
                 )
             )
-            await event.reply(
+            await _safe_admin_reply(
+                event,
                 "Inline quality buttons require Telegram bot mode. Reply with one of these commands:\n"
-                + _text_quality_options(video_id, probe["qualities"])
+                + _text_quality_options(video_id, probe["qualities"]),
             )
             return
 
@@ -440,7 +390,8 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
         lines = [f"Choose quality for `{title}`."]
         if probe.get("fallback_reason"):
             lines.append("Format probe fell back to common quality caps.")
-        await event.reply(
+        await _safe_admin_reply(
+            event,
             "\n".join(lines),
             buttons=_build_quality_buttons(video_id, probe["qualities"]),
         )
@@ -488,6 +439,151 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
             except Exception:
                 message_id = 0
         _remember_admin_progress_message(pending.video_id, admin, int(message_id or 0), pending.title, label)
+
+
+def _parse_admin_command(text: str, bot_username: str | None = None) -> ParsedAdminCommand | None:
+    stripped = text.strip()
+    if not stripped.startswith("/"):
+        return None
+
+    parts = stripped.split()
+    token = parts[0][1:]
+    if not token:
+        return None
+
+    name, _, mention = token.partition("@")
+    if mention and bot_username and mention.lower() != bot_username.lower():
+        return None
+
+    aliases = {
+        "help": "cmds",
+        "commands": "cmds",
+    }
+    normalized = aliases.get(name.lower(), name.lower())
+    return ParsedAdminCommand(normalized, tuple(parts[1:]))
+
+
+async def _handle_admin_command(event, command: ParsedAdminCommand, config: Config, admin: int, nc, state: dict) -> None:
+    if command.name in {"start", "cmds"}:
+        await _safe_admin_reply(
+            event,
+            _command_list_text(config),
+            buttons=_command_buttons(config) if config.use_bot else None,
+        )
+        return
+
+    if command.name == "settings":
+        url = _web_url(config, "settings")
+        buttons = [[Button.url("Open settings", url)]] if config.use_bot else None
+        await _safe_admin_reply(event, f"Settings: {url}", buttons=buttons, plain_text=f"Settings: {url}")
+        return
+
+    if command.name == "downloads":
+        page = _page_number(command.args[0] if command.args else None)
+        text, buttons = await _download_queue_response(config, page)
+        await _safe_admin_reply(event, text, buttons=buttons if config.use_bot else None)
+        return
+
+    if command.name == "dl":
+        await _handle_text_quality_command(event, command, config, admin, nc)
+        return
+
+    if command.name == "ping":
+        await _safe_admin_reply(
+            event,
+            f"pong — uptime {_fmt_uptime(time.time() - START_TS)}",
+            plain_text=f"pong - uptime {_fmt_uptime(time.time() - START_TS)}",
+        )
+        return
+
+    if command.name == "status":
+        cfg = await Config.load()
+        await _safe_admin_reply(event, _status_text(cfg, state), plain_text=_plain_text(_status_text(cfg, state)))
+        return
+
+    await _safe_admin_reply(
+        event,
+        "Unknown command. Use /cmds to see the supported admin controls.",
+        buttons=_command_buttons(config) if config.use_bot else None,
+        plain_text="Unknown command. Use /cmds to see the supported admin controls.",
+    )
+
+
+async def _handle_text_quality_command(event, command: ParsedAdminCommand, config: Config, admin: int, nc) -> None:
+    if len(command.args) < 2:
+        await _safe_admin_reply(event, "Usage: `/dl VIDEO_ID QUALITY`", plain_text="Usage: /dl VIDEO_ID QUALITY")
+        return
+
+    video_id = command.args[0]
+    quality_key = command.args[1].lower()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{11}", video_id):
+        await _safe_admin_reply(event, "Usage: `/dl VIDEO_ID QUALITY`", plain_text="Usage: /dl VIDEO_ID QUALITY")
+        return
+
+    pending = _pending_downloads.get(video_id)
+    if quality_key == "cancel":
+        _pending_downloads.pop(video_id, None)
+        await _safe_admin_reply(event, f"Cancelled `{video_id}`.", plain_text=f"Cancelled {video_id}.")
+        return
+
+    if pending is None or _pending_download_expired(pending):
+        _pending_downloads.pop(video_id, None)
+        await _safe_admin_reply(event, "That quality picker expired. Send the link again.")
+        return
+
+    try:
+        label = await _queue_pending_download(nc, pending, admin, quality_key)
+    except ValueError:
+        await _safe_admin_reply(
+            event,
+            "Unknown quality. Use one of these commands:\n" + _text_quality_options(video_id, pending.qualities),
+        )
+        return
+
+    status_message = await _safe_admin_reply(
+        event,
+        _render_admin_progress_text(pending.video_id, pending.title, label, "queued", {}),
+        buttons=_admin_progress_buttons(config) if config.use_bot else None,
+    )
+    _remember_admin_progress_message(
+        pending.video_id,
+        admin,
+        getattr(status_message, "id", 0),
+        pending.title,
+        label,
+    )
+
+
+def _status_text(config: Config, state: dict) -> str:
+    return "\n".join([
+        "**Yagami status**",
+        f"• Mode: `{'bot' if config.use_bot else 'user-account'}`",
+        f"• Telegram: connected as `@{getattr(state['me'], 'username', '?')}`",
+        f"• Uptime: `{_fmt_uptime(time.time() - START_TS)}`",
+        f"• Events handled: `{state['events_handled']}`",
+        f"• Likes channel: {'✓' if config.chat_id_likes else '✗ not set'}",
+        f"• History channel: {'✓' if config.chat_id_watch_history else '✗ not set'}",
+        f"• Subscriptions channel: {'✓' if config.chat_id_subscriptions else '✗ not set'}",
+    ])
+
+
+async def _safe_admin_reply(event, text: str, buttons=None, plain_text: str | None = None):
+    try:
+        return await event.reply(text, buttons=buttons)
+    except Exception:
+        log.exception("Admin reply failed; retrying without markdown or buttons")
+
+    fallback = plain_text or _plain_text(text)
+    try:
+        return await event.reply(fallback, parse_mode=None)
+    except Exception:
+        log.exception("Admin reply fallback failed")
+        return None
+
+
+def _plain_text(text: str) -> str:
+    plain = text.replace("**", "").replace("`", "").replace("•", "-")
+    return plain.replace("\\", "")
 
 
 async def _register_admin_progress_handlers(tg: TelegramClient, nc, config: Config) -> None:
