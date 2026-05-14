@@ -1,6 +1,7 @@
 """Tests for the main NATS+Telethon client wiring."""
 
 import asyncio
+from datetime import datetime, timezone
 import json
 import re
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,6 +9,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from telegram_client.config import Config
+from telegram_client.client import (
+    QueuePage,
+    _page_number,
+    _progress_percent,
+    _render_admin_progress_text,
+    _render_download_queue_page,
+    _status_from_progress_subject,
+)
 
 
 def make_config(**overrides) -> Config:
@@ -140,3 +149,67 @@ class TestSystemHealthSubscription:
             routes["system.health"] = cfg.admin_user_id
         assert "system.health" in routes
         assert routes["system.health"] == 12345
+
+
+class TestAdminProgressFormatting:
+    def test_upload_progress_percent_from_bytes(self):
+        payload = {"uploaded_bytes": 25, "total_bytes": 100}
+
+        assert _progress_percent("uploading", payload) == 25.0
+
+    def test_terminal_upload_renders_delivered_text(self):
+        text = _render_admin_progress_text(
+            "abc12345678",
+            "A video with *markdown*",
+            "Best",
+            "uploaded",
+            {"elapsed_text": "6s (7.7 MB/s average)", "speed_text": "7.7 MB/s"},
+        )
+
+        assert "Yagami admin download" in text
+        assert "Uploaded to Telegram" in text
+        assert "Delivered to Telegram" in text
+        assert "A video with \\*markdown\\*" in text
+
+    def test_status_subject_mapping(self):
+        assert _status_from_progress_subject("download.progress", {"status": "downloading"}) == "downloading"
+        assert _status_from_progress_subject("download.complete", {"success": True}) == "completed"
+        assert _status_from_progress_subject("download.complete", {"success": False}) == "failed"
+        assert _status_from_progress_subject("download.uploaded", {}) == "uploaded"
+
+
+class TestQueueRendering:
+    def test_page_number_defaults_to_one(self):
+        assert _page_number(None) == 1
+        assert _page_number("bad") == 1
+        assert _page_number("0") == 1
+        assert _page_number("3") == 3
+
+    def test_queue_page_renders_jobs(self):
+        page = QueuePage(
+            rows=[
+                {
+                    "video_id": "abc12345678",
+                    "title": "Queue item",
+                    "status": "uploading",
+                    "file_size": 1024 * 1024,
+                    "attempts": 2,
+                    "requester_chat_id": 680240877,
+                    "error_message": None,
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            ],
+            page=1,
+            total_pages=2,
+            total_count=6,
+            active_count=1,
+        )
+
+        text = _render_download_queue_page(page)
+
+        assert "Yagami queue" in text
+        assert "Page `1/2`" in text
+        assert "Uploading to Telegram" in text
+        assert "Queue item" in text
+        assert "Admin DM" in text
+        assert "Retry `2`" in text

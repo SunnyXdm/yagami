@@ -57,6 +57,8 @@ TELEGRAM_UPLOAD_PART_SIZE_KB = 512
 TELEGRAM_BIG_FILE_THRESHOLD_BYTES = 10 * 1024 * 1024
 TELEGRAM_PARALLEL_UPLOAD_CONNECTIONS = 8
 TELEGRAM_PARALLEL_UPLOAD_MIN_BYTES = TELEGRAM_BIG_FILE_THRESHOLD_BYTES + 1
+TELEGRAM_UPLOAD_PROGRESS_MIN_BYTES = 2 * 1024 * 1024
+TELEGRAM_UPLOAD_PROGRESS_MIN_INTERVAL_SECONDS = 0.5
 YOUTUBE_THUMB_RE = re.compile(r"(?:i\.ytimg\.com|img\.youtube\.com)/vi(?:_webp)?/([a-zA-Z0-9_-]{11})/")
 
 
@@ -791,7 +793,11 @@ def _make_upload_progress_callback(
     def callback(current: int | float, total: int | float) -> None:
         sent_now = max(bytes_before_part, min(bytes_before_part + int(current), total_bytes))
         now = time.monotonic()
-        if sent_now < total_bytes and sent_now - last_sent["bytes"] < 16 * 1024 * 1024 and now - last_sent["ts"] < 1.0:
+        if (
+            sent_now < total_bytes
+            and sent_now - last_sent["bytes"] < TELEGRAM_UPLOAD_PROGRESS_MIN_BYTES
+            and now - last_sent["ts"] < TELEGRAM_UPLOAD_PROGRESS_MIN_INTERVAL_SECONDS
+        ):
             return
 
         last_sent["bytes"] = sent_now
@@ -799,6 +805,7 @@ def _make_upload_progress_callback(
         elapsed = max(now - started_at, 0.001)
         bytes_per_second = sent_now / elapsed
         remaining = max(total_bytes - sent_now, 0)
+        progress_percent = max(0.0, min(100.0, sent_now / total_bytes * 100.0))
         progress_text = _format_upload_progress(sent_now, total_bytes, bytes_per_second)
         eta_text = _format_eta(remaining, bytes_per_second)
 
@@ -819,9 +826,11 @@ def _make_upload_progress_callback(
                     "status": "uploading",
                     "uploaded_bytes": sent_now,
                     "total_bytes": total_bytes,
+                    "progress_percent": progress_percent,
                     "progress_text": progress_text,
                     "speed_text": _format_rate(bytes_per_second),
                     "eta_text": eta_text,
+                    "elapsed_text": _format_elapsed(elapsed, sent_now),
                     "part": part,
                     "total_parts": total_parts,
                 },

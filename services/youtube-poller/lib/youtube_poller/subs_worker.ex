@@ -7,7 +7,7 @@ defmodule YoutubePoller.SubsWorker do
   require Logger
 
   @subscriptions_api_soft_cap 1000
-  @unsubscribe_confirmations 2
+  @default_unsubscribe_confirmations 1
   @recent_subscription_window_seconds 86_400
 
   def start_link(_), do: GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
@@ -53,7 +53,8 @@ defmodule YoutubePoller.SubsWorker do
             true ->
               publish_new_subscriptions(new_subs)
 
-              {confirmed_removed, pending_unsubscribes} = confirm_removed(removed, state.pending_unsubscribes)
+              {confirmed_removed, pending_unsubscribes} =
+                confirm_removed(removed, state.pending_unsubscribes, unsubscribe_confirmations())
 
               for cid <- confirmed_removed do
                 sub = Map.get(known, cid, %{channel_id: cid})
@@ -141,11 +142,16 @@ defmodule YoutubePoller.SubsWorker do
 
   defp maybe_clear_snapshot_warning(state), do: state
 
-  defp confirm_removed(removed, pending_unsubscribes) do
+  defp unsubscribe_confirmations do
+    YoutubePoller.Settings.get_int("poll.unsubscribe_confirmations", @default_unsubscribe_confirmations)
+    |> max(1)
+  end
+
+  defp confirm_removed(removed, pending_unsubscribes, required_confirmations) do
     Enum.reduce(removed, {[], %{}}, fn cid, {confirmed, pending} ->
       count = Map.get(pending_unsubscribes, cid, 0) + 1
 
-      if count >= @unsubscribe_confirmations do
+      if count >= required_confirmations do
         {[cid | confirmed], pending}
       else
         {confirmed, Map.put(pending, cid, count)}

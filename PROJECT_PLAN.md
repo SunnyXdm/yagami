@@ -12,7 +12,7 @@ Current shipped behavior:
 - Scrape private watch history with `yt-dlp` and browser cookies.
 - Track subscription changes, with protective fallbacks for unstable large-account snapshots.
 - Queue liked videos and admin-requested links for download.
-- Upload completed downloads to Telegram, including live upload progress and multi-part uploads.
+- Upload completed downloads to Telegram, including live upload progress, admin DM status-message edits, and multi-part uploads.
 - Surface activity, downloads, logs, heartbeats, and readiness in the browser.
 
 ## Primary User Flow
@@ -68,6 +68,8 @@ telegram-client --download.upload_*----> NATS --SSE fanout-----------> frontend
 all services ---system.heartbeat/logs--> NATS -> api-gateway sinks -> Postgres + SSE
 ```
 
+Admin DM downloads use the same event stream. After the admin chooses a quality, the Telegram client keeps the bot message as a live job surface and edits it as `download.progress`, `download.upload_progress`, `download.uploaded`, or `download.upload_failed` arrives.
+
 ## Runtime Settings Model
 
 All user-editable runtime settings live in Postgres rather than `.env` files:
@@ -114,6 +116,7 @@ Advanced Telethon user-account mode is optional and must never block normal bot-
 
 - **Activity** shows likes, watches, and subscription changes newest first with thumbnails and deep links.
 - **Downloads** shows queue state, source labels, Telegram upload progress, delivery status, retry, and multi-part upload state.
+- **Telegram bot** shows `/status`, `/settings`, `/downloads`, and `/ping`; `/downloads` renders a paginated queue with active jobs first.
 - **Logs** mixes a cursor-based historical query with a live SSE stream; the page can pause live following and load older rows on scroll.
 - **Settings** masks secrets by default, validates changed fields, and writes only touched keys.
 - **Dashboard** surfaces counters plus service heartbeat health.

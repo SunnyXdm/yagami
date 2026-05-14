@@ -25,6 +25,7 @@ interface Download {
 
 interface LiveUploadState {
   status: string;
+  received_at?: number;
   uploaded_bytes?: number;
   total_bytes?: number;
   progress_percent?: number;
@@ -39,6 +40,7 @@ interface LiveUploadState {
 export function DownloadsPage() {
   const qc = useQueryClient();
   const [liveUploads, setLiveUploads] = useState<Record<string, LiveUploadState>>({});
+  const [streamStatus, setStreamStatus] = useState<"connecting" | "live" | "retrying">("connecting");
   const now = useNow();
   const { data } = useQuery({
     queryKey: ["downloads"],
@@ -48,6 +50,8 @@ export function DownloadsPage() {
 
   useEffect(() => {
     const es = apiStream();
+    es.onopen = () => setStreamStatus("live");
+    es.onerror = () => setStreamStatus("retrying");
 
     const merge = (videoId: string, next: LiveUploadState) => {
       setLiveUploads((prev) => ({
@@ -55,6 +59,7 @@ export function DownloadsPage() {
         [videoId]: {
           ...prev[videoId],
           ...next,
+          received_at: Date.now(),
         },
       }));
     };
@@ -130,7 +135,7 @@ export function DownloadsPage() {
   const rows = useMemo(
     () =>
       (data || []).map((download) => {
-        const live = liveUploads[download.video_id];
+        const live = currentLiveState(download, liveUploads[download.video_id]);
         return {
           download,
           live,
@@ -170,6 +175,10 @@ export function DownloadsPage() {
         title="Download queue"
         right={
           <div className="flex flex-wrap gap-2">
+            <span className="inline-flex items-center gap-2 rounded-[8px] border border-border bg-panel px-3 py-2 text-[13px] text-body">
+              <span className={cn("h-2 w-2 rounded-full", streamStatus === "live" ? "bg-accentGreen" : streamStatus === "retrying" ? "bg-accentYellow" : "bg-white/50")} />
+              {streamStatus === "live" ? "SSE live" : streamStatus === "retrying" ? "reconnecting" : "connecting"}
+            </span>
             <span className="inline-flex items-center rounded-[8px] border border-border bg-panel px-3 py-2 text-[13px] text-body">
               200 recent jobs
             </span>
@@ -383,6 +392,29 @@ function progressPercent(live?: LiveUploadState) {
     return undefined;
   }
   return Math.max(0, Math.min(100, Math.round((live.uploaded_bytes / live.total_bytes) * 100)));
+}
+
+function currentLiveState(download: Download, live?: LiveUploadState) {
+  if (!live) return undefined;
+  const dbUpdated = Date.parse(download.updated_at || "");
+  if (Number.isFinite(dbUpdated) && live.received_at && live.received_at + 1_000 < dbUpdated) {
+    return undefined;
+  }
+
+  const dbStatus = download.status;
+  const liveStatus = live.status;
+  if (isActiveStatus(liveStatus) && isTerminalStatus(dbStatus)) {
+    return undefined;
+  }
+  return live;
+}
+
+function isActiveStatus(status: string) {
+  return status === "queued" || status === "downloading" || status === "completed" || status === "uploading";
+}
+
+function isTerminalStatus(status: string) {
+  return status === "uploaded" || status === "failed" || status === "upload_failed";
 }
 
 function MetricCard({

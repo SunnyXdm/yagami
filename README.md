@@ -30,6 +30,12 @@
 
 ---
 
+## Product Preview
+
+![Yagami control plane](docs/assets/yagami-control-plane.svg)
+
+![Telegram admin download flow](docs/assets/telegram-admin-flow.svg)
+
 ## Features
 
 | Capability | Description |
@@ -37,7 +43,8 @@
 | Guided setup | The first-run wizard writes runtime settings to Postgres and keeps the dashboard locked until the required checks pass. |
 | Fixed localhost OAuth callback | Google browser authorization always returns to `http://localhost:8787/api/oauth/google/callback`, even if the UI is opened through another hostname. |
 | Activity feed | Likes, watches, and subscription changes render newest first with links and thumbnails. |
-| Download tracking | Queue state, retry, source labels, Telegram upload progress, and multi-part upload status for large videos. |
+| Download tracking | Queue state, retry, source labels, yt-dlp progress, Telegram upload progress, and multi-part upload status for large videos. |
+| Telegram admin console | Send a YouTube link to the bot, choose quality, watch the same status message update live, and browse the queue with `/downloads`. |
 | Live operations view | Structured logs stream over SSE with filters, pause/follow mode, and older-history loading on scroll. |
 | Practical Telegram defaults | Bot mode is the standard install path; user-account mode remains available only as an advanced option. |
 
@@ -130,6 +137,22 @@ Paste `google.client_id` and `google.client_secret` in the UI, save, then click 
 
 Bot mode is enough for normal delivery. Likes, watch notifications, subscription events, completed downloads, and admin DM-triggered downloads all work in this mode.
 
+### Telegram Admin Commands
+
+The command menu is intentionally small; every command in it is implemented.
+
+| Command | Behavior |
+| --- | --- |
+| `/start` | Shows the admin control summary and web links. |
+| `/cmds` | Shows the same command list. |
+| `/status` | Reports Telegram mode, uptime, event count, and configured routes. |
+| `/downloads` | Shows a paginated queue with active jobs first. |
+| `/downloads 2` | Opens a specific queue page. |
+| `/settings` | Opens the web settings page. |
+| `/ping` | Confirms the bot is responsive. |
+
+When the admin sends a YouTube link, Yagami probes available qualities, shows inline quality buttons, queues the selected job with admin priority, and edits that same Telegram message as the job moves through queued, downloading, uploading, and uploaded states. The web Downloads page receives the same `download.*` events over SSE.
+
 #### Optional advanced mode: user-account Telethon session
 
 The Settings page also exposes:
@@ -180,10 +203,20 @@ docker compose down -v
 
 Whenever settings are saved, the API broadcasts `system.config_changed` so services can reload or restart with the new values.
 
+For Telegram upload performance, the Alpine image includes `cryptg` and the client uses a pipelined MTProto upload path. If a rebuild ever behaves strangely, verify the image before measuring uploads:
+
+```bash
+docker compose build --no-cache telegram-client
+docker compose run --rm --entrypoint sh telegram-client -c 'wc -c /app/telegram_client/*.py && python - <<"PY"
+import importlib.util
+print("cryptg", bool(importlib.util.find_spec("cryptg")))
+PY'
+```
+
 ## Known Limits and Caveats
 
 - Watch history is not available in the YouTube Data API. If `youtube.cookies` expires or becomes invalid, watch-history scraping stops working until you paste fresh cookies.
-- Very large YouTube accounts near the `subscriptions.list` 1000-item ceiling are upstream-limited. In that case, unsubscribe detection is paused and recent subscribe detection is best-effort only.
+- Very large YouTube accounts near the `subscriptions.list` 1000-item ceiling are upstream-limited. In that case, unsubscribe detection is paused and recent subscribe detection is best-effort only. For stable snapshots, unsubscribe confirmation defaults to one poll and can be raised with `poll.unsubscribe_confirmations`.
 - The downloader enforces `downloader.max_filesize_gb` after download. If the file is accepted but larger than Telegram's upload ceiling, the Telegram client splits it into roughly 1.95 GB parts and uploads them sequentially.
 - Bot mode still runs through Telethon and Telegram MTProto under the hood. User-account mode is optional advanced behavior, not the normal install path.
 

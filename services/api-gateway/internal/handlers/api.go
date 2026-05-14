@@ -141,7 +141,7 @@ func retryDownloadPayload(videoID string, download *store.Download) ([]byte, err
 		payloadMap["thumbnail"] = *download.ThumbnailURL
 	}
 	if download.Channel != nil {
-		payloadMap["channel_title"] = *download.Channel
+		payloadMap["channel"] = *download.Channel
 	}
 	return json.Marshal(payloadMap)
 }

@@ -1,12 +1,16 @@
 """Main client — Telethon ↔ NATS bridge with bot commands and hot-reload."""
 
+from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
 import logging
 import os
 import re
 import time
+from typing import Any
 
 import nats
 from telethon import Button, TelegramClient, events
@@ -29,6 +33,10 @@ YOUTUBE_RE = re.compile(
 START_TS = time.time()
 ADMIN_REQUEST_PRIORITY = 100
 PENDING_DOWNLOAD_TTL_SECONDS = 15 * 60
+DOWNLOADS_PAGE_SIZE = 5
+ADMIN_PROGRESS_EDIT_INTERVAL_SECONDS = 2.0
+ACTIVE_DOWNLOAD_STATUSES = {"queued", "downloading", "completed", "uploading"}
+TERMINAL_DOWNLOAD_STATUSES = {"uploaded", "upload_failed", "failed"}
 DEFAULT_QUALITY_OPTIONS = [
     {"key": "best", "label": "Best"},
     {"key": "1080", "label": "1080p"},
@@ -37,11 +45,11 @@ DEFAULT_QUALITY_OPTIONS = [
     {"key": "360", "label": "360p"},
 ]
 BOT_COMMANDS = [
-    ("start", "Show help"),
-    ("cmds", "List admin commands"),
+    ("start", "Show Yagami admin controls"),
+    ("cmds", "List commands"),
     ("status", "Show service status"),
+    ("downloads", "Show paginated queue"),
     ("settings", "Open web settings"),
-    ("downloads", "Open download queue"),
     ("ping", "Quick health check"),
 ]
 
@@ -56,7 +64,28 @@ class PendingDownloadRequest:
     created_at: float
 
 
+@dataclass
+class AdminProgressMessage:
+    video_id: str
+    chat_id: int
+    message_id: int
+    title: str
+    quality_label: str
+    last_edit_at: float = 0.0
+    last_text: str = ""
+
+
+@dataclass
+class QueuePage:
+    rows: list[Any]
+    page: int
+    total_pages: int
+    total_count: int
+    active_count: int
+
+
 _pending_downloads: dict[str, PendingDownloadRequest] = {}
+_admin_progress_messages: dict[str, AdminProgressMessage] = {}
 
 
 async def run() -> None:
@@ -159,6 +188,7 @@ async def run() -> None:
     # ── Bot commands (admin only) ─────────────────────────────
     if config.admin_user_id:
         _register_admin_handlers(tg, nc, state)
+        await _register_admin_progress_handlers(tg, nc, config)
         log.info("Admin handlers registered (user_id=%s)", config.admin_user_id)
     else:
         log.warning("telegram.admin_user_id is not set — bot commands disabled.")
@@ -251,14 +281,15 @@ def _bot_session_path(config: Config) -> str:
 
 def _command_list_text(config: Config) -> str:
     return "\n".join([
-        "**Yagami commands**",
+        "**Yagami admin controls**",
         "",
-        "• `/status` — service status",
-        "• `/settings` — open web settings",
-        "• `/downloads` — open download queue",
-        "• `/ping` — quick health check",
+        "`/status` - service health and routing",
+        "`/downloads` - paginated queue in Telegram",
+        "`/downloads 2` - jump to a queue page",
+        "`/settings` - open web settings",
+        "`/ping` - quick health check",
         "",
-        "Send a YouTube link to choose quality and queue an admin download.",
+        "Send a YouTube link here to inspect quality, queue it to your DM, and watch live progress in this chat.",
         f"Web UI: {_web_url(config)}",
     ])
 
@@ -288,11 +319,27 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
         buttons = [[Button.url("Open settings", url)]] if config.use_bot else None
         await event.reply(f"Settings: {url}", buttons=buttons)
 
-    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/downloads(?:@\w+)?$"))
+    @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/downloads(?:@\w+)?(?:\s+(\d+))?$"))
     async def _downloads(event):
-        url = _web_url(config, "downloads")
-        buttons = [[Button.url("Open queue", url)]] if config.use_bot else None
-        await event.reply(f"Download queue: {url}", buttons=buttons)
+        page = _page_number(event.pattern_match.group(1) if event.pattern_match else None)
+        text, buttons = await _download_queue_response(config, page)
+        await event.reply(text, buttons=buttons if config.use_bot else None)
+
+    @tg.on(events.CallbackQuery(pattern=rb"^queue:"))
+    async def _on_queue_page(event):
+        if getattr(event, "sender_id", None) != admin:
+            await event.answer("Not allowed", alert=True)
+            return
+
+        try:
+            page = _page_number(event.data.decode().split(":", 1)[1])
+        except Exception:
+            await event.answer("Invalid page", alert=True)
+            return
+
+        text, buttons = await _download_queue_response(config, page)
+        await event.edit(text, buttons=buttons)
+        await event.answer(f"Page {page}")
 
     @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/dl(?:@\w+)?\s+([A-Za-z0-9_-]{11})\s+(\S+)$"))
     async def _text_quality_selected(event):
@@ -314,7 +361,17 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
         except ValueError:
             await event.reply("Unknown quality. Use one of these commands:\n" + _text_quality_options(video_id, pending.qualities))
             return
-        await event.reply(f"Queued `{pending.title}` at `{label}`.")
+        status_message = await event.reply(
+            _render_admin_progress_text(pending.video_id, pending.title, label, "queued", {}),
+            buttons=_admin_progress_buttons(config) if config.use_bot else None,
+        )
+        _remember_admin_progress_message(
+            pending.video_id,
+            admin,
+            getattr(status_message, "id", 0),
+            pending.title,
+            label,
+        )
 
     @tg.on(events.NewMessage(from_users=[admin], pattern=r"^/ping(?:@\w+)?$"))
     async def _ping(event):
@@ -419,7 +476,39 @@ def _register_admin_handlers(tg: TelegramClient, nc, state: dict) -> None:
             await event.answer("Unknown quality", alert=True)
             return
         await event.answer(f"Queued {label}")
-        await event.edit(f"Queued `{pending.title}` at `{label}`.")
+        await event.edit(
+            _render_admin_progress_text(pending.video_id, pending.title, label, "queued", {}),
+            buttons=_admin_progress_buttons(config),
+        )
+        message_id = getattr(event, "message_id", None)
+        if not message_id:
+            try:
+                message = await event.get_message()
+                message_id = getattr(message, "id", 0)
+            except Exception:
+                message_id = 0
+        _remember_admin_progress_message(pending.video_id, admin, int(message_id or 0), pending.title, label)
+
+
+async def _register_admin_progress_handlers(tg: TelegramClient, nc, config: Config) -> None:
+    async def handler(msg, subject: str):
+        try:
+            data = json.loads(msg.data.decode())
+            await _update_admin_progress_message(tg, config, subject, data)
+        except Exception:
+            log.exception("Error updating admin progress for %s", subject)
+
+    for subject in (
+        "download.progress",
+        "download.complete",
+        "download.upload_progress",
+        "download.uploaded",
+        "download.upload_failed",
+    ):
+        async def progress_handler(msg, subject=subject):
+            await handler(msg, subject)
+
+        await nc.subscribe(subject, cb=progress_handler)
 
 
 async def _status_heartbeat(nc, status_fn) -> None:
@@ -466,6 +555,320 @@ def _prune_pending_downloads() -> None:
 
 def _pending_download_expired(pending: PendingDownloadRequest) -> bool:
     return time.time() - pending.created_at > PENDING_DOWNLOAD_TTL_SECONDS
+
+
+def _remember_admin_progress_message(
+    video_id: str,
+    chat_id: int,
+    message_id: int,
+    title: str,
+    quality_label: str,
+) -> None:
+    if not message_id:
+        log.warning("Could not track admin progress for %s because message_id is missing", video_id)
+        return
+    _admin_progress_messages[video_id] = AdminProgressMessage(
+        video_id=video_id,
+        chat_id=chat_id,
+        message_id=message_id,
+        title=title,
+        quality_label=quality_label,
+    )
+
+
+async def _update_admin_progress_message(
+    tg: TelegramClient,
+    config: Config,
+    subject: str,
+    payload: dict,
+) -> None:
+    video_id = str(payload.get("video_id") or "")
+    state = _admin_progress_messages.get(video_id)
+    if not state:
+        return
+
+    status = _status_from_progress_subject(subject, payload)
+    text = _render_admin_progress_text(video_id, state.title, state.quality_label, status, payload)
+    terminal = status in TERMINAL_DOWNLOAD_STATUSES
+    now = time.monotonic()
+    if not terminal and text == state.last_text:
+        return
+    if not terminal and now - state.last_edit_at < ADMIN_PROGRESS_EDIT_INTERVAL_SECONDS:
+        return
+
+    try:
+        await tg.edit_message(
+            state.chat_id,
+            state.message_id,
+            text,
+            buttons=_admin_progress_buttons(config),
+        )
+        state.last_edit_at = now
+        state.last_text = text
+    except FloodWaitError as exc:
+        log.warning("Admin progress edit for %s flood-waited for %ss", video_id, exc.seconds)
+    except Exception:
+        log.exception("Could not edit admin progress message for %s", video_id)
+
+    if terminal:
+        _admin_progress_messages.pop(video_id, None)
+
+
+def _status_from_progress_subject(subject: str, payload: dict) -> str:
+    if subject == "download.progress":
+        return str(payload.get("status") or "downloading")
+    if subject == "download.complete":
+        return "failed" if payload.get("success") is False else "completed"
+    if subject == "download.upload_progress":
+        return "uploading"
+    if subject == "download.uploaded":
+        return "uploaded"
+    if subject == "download.upload_failed":
+        return "upload_failed"
+    return str(payload.get("status") or "queued")
+
+
+def _admin_progress_buttons(config: Config) -> list[list[Button]]:
+    return [[Button.url("Open downloads", _web_url(config, "downloads"))]]
+
+
+def _render_admin_progress_text(
+    video_id: str,
+    title: str,
+    quality_label: str,
+    status: str,
+    payload: dict,
+) -> str:
+    percent = _progress_percent(status, payload)
+    lines = [
+        "**Yagami admin download**",
+        "",
+        f"`{_progress_bar(percent)}` `{percent:.0f}%`",
+        f"`Status:` {_status_label(status)}",
+        f"`Video:` {_escape_md_text(title)}",
+        f"`Quality:` {_escape_md_text(quality_label)}",
+        f"`ID:` `{_escape_code(video_id)}`",
+    ]
+
+    speed = payload.get("speed_text")
+    eta = payload.get("eta_text")
+    part = payload.get("part")
+    total_parts = payload.get("total_parts")
+    error = payload.get("error")
+    if speed:
+        lines.append(f"`Speed:` {_escape_md_text(speed)}")
+    if eta:
+        lines.append(f"`ETA:` {_escape_md_text(eta)}")
+    if part and total_parts and int(total_parts) > 1:
+        lines.append(f"`Part:` `{part}/{total_parts}`")
+    if error:
+        lines.extend(["", f"`Error:` {_escape_md_text(error)}"])
+
+    if status == "queued":
+        lines.extend(["", "Waiting for the downloader worker."])
+    elif status == "completed":
+        lines.extend(["", "Download finished. Telegram upload is starting."])
+    elif status == "uploaded":
+        elapsed = payload.get("elapsed_text")
+        if elapsed:
+            lines.extend(["", f"Delivered to Telegram in {_escape_md_text(elapsed)}."])
+        else:
+            lines.extend(["", "Delivered to Telegram."])
+
+    return "\n".join(lines)
+
+
+def _status_label(status: str) -> str:
+    labels = {
+        "queued": "Queued",
+        "downloading": "Downloading with yt-dlp",
+        "completed": "Download complete",
+        "uploading": "Uploading to Telegram",
+        "uploaded": "Uploaded to Telegram",
+        "failed": "Download failed",
+        "upload_failed": "Telegram upload failed",
+    }
+    return labels.get(status, status.replace("_", " ").title())
+
+
+def _progress_percent(status: str, payload: dict) -> float:
+    if status in {"uploaded"}:
+        return 100.0
+    if status in {"failed", "upload_failed"}:
+        value = payload.get("progress_percent")
+        return float(value) if isinstance(value, (int, float)) else 0.0
+    value = payload.get("progress_percent")
+    if isinstance(value, (int, float)):
+        return max(0.0, min(100.0, float(value)))
+    uploaded = payload.get("uploaded_bytes")
+    total = payload.get("total_bytes")
+    if isinstance(uploaded, (int, float)) and isinstance(total, (int, float)) and total > 0:
+        return max(0.0, min(100.0, float(uploaded) / float(total) * 100.0))
+    if status == "completed":
+        return 100.0
+    if status == "uploading":
+        return 0.0
+    return 0.0
+
+
+def _progress_bar(percent: float) -> str:
+    filled = max(0, min(10, round(percent / 10)))
+    return "[" + "#" * filled + "-" * (10 - filled) + "]"
+
+
+async def _download_queue_response(config: Config, page: int) -> tuple[str, list[list[Button]]]:
+    try:
+        queue_page = await _fetch_download_queue_page(config, page, DOWNLOADS_PAGE_SIZE)
+    except Exception as exc:
+        log.exception("Could not load download queue")
+        return (
+            "**Yagami queue**\n\nCould not load downloads from Postgres.\n"
+            f"`Error:` {_escape_md_text(exc)}",
+            [[Button.url("Open downloads", _web_url(config, "downloads"))]],
+        )
+
+    return _render_download_queue_page(queue_page), _queue_page_buttons(config, queue_page)
+
+
+async def _fetch_download_queue_page(config: Config, page: int, page_size: int) -> QueuePage:
+    import asyncpg
+
+    page_size = max(1, min(10, page_size))
+    conn = await asyncpg.connect(config.database_url)
+    try:
+        counts = await conn.fetchrow(
+            """
+            SELECT COUNT(*)::int AS total_count,
+                   COUNT(*) FILTER (WHERE status IN ('queued','downloading','completed','uploading'))::int AS active_count
+              FROM downloads
+            """
+        )
+        total_count = int(counts["total_count"] or 0)
+        active_count = int(counts["active_count"] or 0)
+        total_pages = max(1, (total_count + page_size - 1) // page_size)
+        page = max(1, min(page, total_pages))
+        rows = await conn.fetch(
+            """
+            SELECT video_id, title, status, file_size, attempts, requester_chat_id,
+                   telegram_chat_id, telegram_msg_id, error_message, updated_at
+              FROM downloads
+          ORDER BY CASE WHEN status IN ('queued','downloading','completed','uploading') THEN 0 ELSE 1 END,
+                   updated_at DESC,
+                   id DESC
+             LIMIT $1 OFFSET $2
+            """,
+            page_size,
+            (page - 1) * page_size,
+        )
+        return QueuePage(
+            rows=list(rows),
+            page=page,
+            total_pages=total_pages,
+            total_count=total_count,
+            active_count=active_count,
+        )
+    finally:
+        await conn.close()
+
+
+def _render_download_queue_page(queue_page: QueuePage) -> str:
+    lines = [
+        "**Yagami queue**",
+        f"Page `{queue_page.page}/{queue_page.total_pages}` - `{queue_page.total_count}` jobs - `{queue_page.active_count}` active",
+        "",
+    ]
+    if not queue_page.rows:
+        lines.append("No downloads yet. Send a YouTube link to this chat to queue one.")
+        return "\n".join(lines)
+
+    for index, row in enumerate(queue_page.rows, 1):
+        status = str(_row_value(row, "status", "queued"))
+        title = _escape_md_text(_row_value(row, "title", "Untitled") or "Untitled")
+        video_id = _escape_code(str(_row_value(row, "video_id", "")))
+        attempts = int(_row_value(row, "attempts", 0) or 0)
+        route = "Admin DM" if _row_value(row, "requester_chat_id") else "Likes chat"
+        size = _format_size(_row_value(row, "file_size"))
+        updated = _format_relative_time(_row_value(row, "updated_at"))
+        lines.extend([
+            f"`{index}.` **{_status_label(status)}** - {title}",
+            f"   `{video_id}` - {route} - {size} - {updated}",
+        ])
+        if attempts > 1:
+            lines.append(f"   Retry `{attempts}`")
+        error = _row_value(row, "error_message")
+        if error and status in {"failed", "upload_failed"}:
+            lines.append(f"   Error: {_escape_md_text(str(error)[:140])}")
+
+    return "\n".join(lines)
+
+
+def _queue_page_buttons(config: Config, queue_page: QueuePage) -> list[list[Button]]:
+    nav: list[Button] = []
+    if queue_page.page > 1:
+        nav.append(Button.inline("Prev", data=f"queue:{queue_page.page - 1}".encode()))
+    nav.append(Button.inline("Refresh", data=f"queue:{queue_page.page}".encode()))
+    if queue_page.page < queue_page.total_pages:
+        nav.append(Button.inline("Next", data=f"queue:{queue_page.page + 1}".encode()))
+    rows = [nav] if nav else []
+    rows.append([Button.url("Open downloads", _web_url(config, "downloads"))])
+    return rows
+
+
+def _page_number(value: object) -> int:
+    try:
+        return max(1, int(str(value or "1").strip()))
+    except ValueError:
+        return 1
+
+
+def _row_value(row: Any, key: str, default: Any = None) -> Any:
+    try:
+        return row[key]
+    except Exception:
+        return getattr(row, key, default)
+
+
+def _format_size(value: object) -> str:
+    try:
+        size = float(value or 0)
+    except (TypeError, ValueError):
+        size = 0.0
+    units = ["B", "KB", "MB", "GB"]
+    unit = units[0]
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            break
+        size /= 1024
+    return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+
+
+def _format_relative_time(value: object) -> str:
+    if not isinstance(value, datetime):
+        return "unknown"
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    seconds = max(0, int((datetime.now(timezone.utc) - value.astimezone(timezone.utc)).total_seconds()))
+    if seconds < 60:
+        return f"{seconds}s ago"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h ago"
+    days, hours = divmod(hours, 24)
+    return f"{days}d ago"
+
+
+def _escape_md_text(value: object) -> str:
+    text = str(value)
+    for ch in "\\`*_[]()":
+        text = text.replace(ch, f"\\{ch}")
+    return text
+
+
+def _escape_code(value: str) -> str:
+    return value.replace("`", "")
 
 
 async def _queue_pending_download(nc, pending: PendingDownloadRequest, admin: int, quality_key: str) -> str:

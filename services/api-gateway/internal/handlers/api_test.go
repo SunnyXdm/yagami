@@ -34,7 +34,7 @@ func TestRetryDownloadPayloadPreservesRequesterMetadata(t *testing.T) {
 	assertJSONField(t, got, "title", title)
 	assertJSONField(t, got, "url", url)
 	assertJSONField(t, got, "thumbnail", thumbnail)
-	assertJSONField(t, got, "channel_title", channel)
+	assertJSONField(t, got, "channel", channel)
 	assertJSONField(t, got, "requester_chat_id", float64(requesterChatID))
 }
 

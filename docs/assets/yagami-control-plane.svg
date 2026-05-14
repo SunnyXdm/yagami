@@ -1,0 +1,67 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Yagami control plane overview</title>
+  <desc id="desc">A dark operations diagram showing the browser UI, API gateway, NATS, Postgres, YouTube poller, downloader, and Telegram client.</desc>
+  <rect width="1200" height="720" rx="24" fill="#0B0F14"/>
+  <rect x="32" y="32" width="1136" height="656" rx="18" fill="#111821" stroke="#26313D"/>
+  <text x="72" y="92" fill="#F4F7FA" font-family="ui-sans-serif, system-ui, sans-serif" font-size="34" font-weight="700">Yagami Control Plane</text>
+  <text x="72" y="124" fill="#95A3B3" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Private YouTube telemetry, live downloads, and Telegram delivery in one self-hosted stack.</text>
+
+  <g font-family="ui-sans-serif, system-ui, sans-serif">
+    <rect x="72" y="184" width="230" height="116" rx="12" fill="#18212C" stroke="#344252"/>
+    <text x="96" y="224" fill="#F4F7FA" font-size="20" font-weight="700">React Admin</text>
+    <text x="96" y="254" fill="#95A3B3" font-size="14">left sidebar, SSE logs</text>
+    <text x="96" y="278" fill="#95A3B3" font-size="14">downloads and settings</text>
+
+    <rect x="398" y="184" width="230" height="116" rx="12" fill="#142535" stroke="#2D5B76"/>
+    <text x="422" y="224" fill="#F4F7FA" font-size="20" font-weight="700">Go API Gateway</text>
+    <text x="422" y="254" fill="#A9D7F3" font-size="14">auth, REST, SSE fanout</text>
+    <text x="422" y="278" fill="#A9D7F3" font-size="14">settings validation</text>
+
+    <rect x="724" y="184" width="230" height="116" rx="12" fill="#1A202C" stroke="#38455A"/>
+    <text x="748" y="224" fill="#F4F7FA" font-size="20" font-weight="700">Postgres</text>
+    <text x="748" y="254" fill="#B8C3D1" font-size="14">settings, events, logs</text>
+    <text x="748" y="278" fill="#B8C3D1" font-size="14">downloads and sessions</text>
+
+    <rect x="398" y="380" width="230" height="116" rx="12" fill="#152A28" stroke="#32756C"/>
+    <text x="422" y="420" fill="#F4F7FA" font-size="20" font-weight="700">NATS JetStream</text>
+    <text x="422" y="450" fill="#A5E7DC" font-size="14">download.*, youtube.*</text>
+    <text x="422" y="474" fill="#A5E7DC" font-size="14">logs and heartbeats</text>
+
+    <rect x="72" y="548" width="230" height="92" rx="12" fill="#211B18" stroke="#664338"/>
+    <text x="96" y="586" fill="#F4F7FA" font-size="20" font-weight="700">YouTube Poller</text>
+    <text x="96" y="616" fill="#E8B7A6" font-size="14">likes, watches, subs</text>
+
+    <rect x="398" y="548" width="230" height="92" rx="12" fill="#1C1B16" stroke="#615A37"/>
+    <text x="422" y="586" fill="#F4F7FA" font-size="20" font-weight="700">Rust Downloader</text>
+    <text x="422" y="616" fill="#E6D887" font-size="14">yt-dlp queue worker</text>
+
+    <rect x="724" y="548" width="230" height="92" rx="12" fill="#151E31" stroke="#314F89"/>
+    <text x="748" y="586" fill="#F4F7FA" font-size="20" font-weight="700">Telegram Client</text>
+    <text x="748" y="616" fill="#AFC8FF" font-size="14">bot commands, fast MTProto</text>
+  </g>
+
+  <g stroke="#465567" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M302 242H398"/>
+    <path d="M628 242H724"/>
+    <path d="M513 300V380"/>
+    <path d="M302 594H398"/>
+    <path d="M628 594H724"/>
+    <path d="M513 496V548"/>
+    <path d="M839 300V548"/>
+    <path d="M187 548V496H398"/>
+  </g>
+
+  <g font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" fill="#D7DEE8">
+    <rect x="458" y="330" width="110" height="28" rx="14" fill="#0B0F14" stroke="#344252"/>
+    <text x="483" y="349">/api + SSE</text>
+    <rect x="456" y="510" width="114" height="28" rx="14" fill="#0B0F14" stroke="#344252"/>
+    <text x="482" y="529">requests</text>
+    <rect x="782" y="416" width="114" height="28" rx="14" fill="#0B0F14" stroke="#344252"/>
+    <text x="804" y="435">statuses</text>
+  </g>
+
+  <rect x="990" y="548" width="112" height="92" rx="12" fill="#10161D" stroke="#2E3A47"/>
+  <text x="1018" y="586" fill="#F4F7FA" font-family="ui-sans-serif, system-ui, sans-serif" font-size="20" font-weight="700">You</text>
+  <text x="1015" y="616" fill="#95A3B3" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">admin DM</text>
+  <path d="M954 594H990" stroke="#465567" stroke-width="2" stroke-linecap="round"/>
+</svg>
